@@ -7,7 +7,11 @@
 - Target grout reveal: 3.0 mm
 - Grid section: one tile position, 79.2 × 155.4 mm overall
 - Grid wall: 4.0 mm nominal, with 1.5 mm perimeter ribs
-- Upper hook: 8.0 mm engagement depth with a 30° lead-in
+- Upper hook: 8.0 mm receiver housing/footprint depth; `hook_d = hook_depth - 2`
+  in `upper_hook()` yields a 6.0 mm engaging tongue plus a 2.0 mm lead-in
+  chamfer within that footprint, and a 1.0 mm rise over that ~2.0 mm run
+  produces an approximately 26.6° lead-in ramp (not 8.0 mm / 30°). Use 6.0 mm
+  and 26.6° as the acceptance values until the geometry changes.
 - Lower latch datum: 12.0 mm above the carrier bottom
 - Release access: 10.0 mm finger recess below the carrier's lower edge
 - Coupon tolerance variants: 0.20, 0.35, and 0.50 mm clearance
