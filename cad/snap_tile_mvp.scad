@@ -31,17 +31,27 @@ latch_rail_x0 = rib + 10;
 latch_rail_x1 = pitch_w - rib - 10;
 latch_rail_y0 = clip_datum;
 latch_rail_depth = 3;
-// Flex-tab geometry: a rigid root bonds into the carrier floor, a reduced-width
-// neck provides the compliance, and a full-width foot presents an engaging face
-// to a rounded retention ridge on each rail stub.
-tab_root_h = 1.0;
-tab_neck_h = 1.5;
-tab_neck_w = 10;
+// Latch geometry: the tab is a single rigid, full-height block bonded directly
+// into the carrier floor (durable, load-carrying, replaceable per-tile part);
+// the compliance instead lives in a spring finger on the rail (see
+// latch_rail()), which is the permanent, installed-once part.
 ridge_reach = 1.0;
 ridge_z0 = 3.0;
 ridge_h = 1.0;
-notch_flex_gap = 0.6;
-fillet_h = 0.4;
+// Spring-finger geometry (rail side): a cantilever fixed only at its base
+// (bonded to the solid grid floor below z = wall) and free over its full
+// height, thin in the X (lateral flex) direction. Clearing the ridge needs a
+// lateral displacement of about ridge_reach - 2 * clearance = 1.0 - 2 * 0.35 =
+// 0.30 mm. For a cantilever of length finger_l = hook_height = 4.0 mm and
+// thickness finger_w = 1.0 mm (bending direction), the max fiber strain is
+// eps = 3 * finger_w * 0.30 / (2 * finger_l^2) = 3 * 1.0 * 0.30 / (2 * 16)
+// = 0.028, i.e. ~2.8%, under a 3% allowable-strain target for printed
+// PLA/PETG flexures. A neck sized instead on the tab (root/neck/foot within
+// the same hook_height budget) could only offer ~0.7 mm of straight flexure
+// length, which would require ~29% strain for the same displacement -- far
+// beyond a safe target -- so the compliance is moved to the rail instead.
+finger_w = 1.0;
+finger_gap = 0.5;
 // Upper-receiver capturing geometry: a back wall and roof beyond the hook's
 // nominal footprint so the installed lip is captured, not just clearance-fit.
 receiver_back = 1.5;
@@ -99,25 +109,37 @@ module grid_section() {
 }
 
 module latch_rail() {
-    // Two rail stubs flank the flex-tab notch, but only one carries a rounded
-    // retention ridge (tapered top and bottom via hull()) that intrudes into
-    // the notch over a limited z-band; the other stub presents a plain,
-    // clearance-only face. The carrier's tab flexes sideways, away from the
-    // single ridge, to pass it, then springs back to engage it -- giving real
-    // retention with a passable insertion/removal path for a single tab.
+    // Two rail stubs flank the (now rigid) tab notch, but only one carries a
+    // rounded retention ridge (tapered top and bottom via hull()) that
+    // intrudes into the notch over a limited z-band; the other stub presents
+    // a plain, clearance-only face. Only the left stub carries a retention
+    // ridge. With ridges on both sides, the throat between them (18.7 mm) was
+    // narrower than the rigid foot (19.3 mm), so no lateral shift could clear
+    // both at once. A single ridge lets clearance be taken up entirely toward
+    // the open (ridge-free) side.
+    //
+    // The ridge itself now sits on a compliant spring finger, not on the rigid
+    // stub body: a full-height cantilever (see finger_w/finger_gap above),
+    // isolated from the rest of the stub by a thin slot over its whole height
+    // and fixed only where its base bonds into the solid grid floor below
+    // z = wall. This gives a flexure length of finger_l = hook_height = 4 mm
+    // (vs. the ~0.7 mm a tab-side neck could fit in the same envelope), so it
+    // deflects out of the way on insertion/removal within the documented
+    // strain target and springs back to engage the rigid tab foot once
+    // settled.
+    face_x = latch_tab_x0 - clearance;
+    finger_x0 = face_x - finger_w;
     difference() {
         translate([latch_rail_x0, latch_rail_y0, wall])
             cube([latch_rail_x1 - latch_rail_x0, latch_rail_depth, hook_height]);
         translate([latch_tab_x0 - clearance, latch_rail_y0 - 0.1, wall - 0.1])
             cube([latch_tab_w + 2 * clearance, latch_rail_depth + 0.2, hook_height + 0.2]);
+        // Isolation slot: frees the spring finger from the rest of the left
+        // stub across its full height so only its base (below z = wall)
+        // fixes it, matching the cantilever model used in the strain check.
+        translate([finger_x0 - finger_gap, latch_rail_y0 - 0.1, wall - 0.1])
+            cube([finger_gap, latch_rail_depth + 0.2, hook_height + 0.2]);
     }
-    // Only the left stub carries a retention ridge. With ridges on both sides,
-    // the throat between them (18.7 mm) was narrower than the rigid foot
-    // (19.3 mm), so no lateral shift of the single tab could clear both at
-    // once. A single ridge lets the tab shift entirely toward the open
-    // (ridge-free) side -- which keeps ample clearance throughout -- to pass
-    // the one ridge on insertion/removal, then spring back to engage it.
-    face_x = latch_tab_x0 - clearance;
     translate([face_x, latch_rail_y0 + 0.2, wall])
         hull() {
             translate([0, 0, ridge_z0])
@@ -182,10 +204,10 @@ module carrier_shell() {
 
 module carrier() {
     housing_wall = 1.5;
-    // Rail-stub X ranges (left/right of the flex-tab notch); the stub reliefs
-    // below clear only these ranges. The notch itself gets its own, separate
-    // isolation relief further down, so the tab's root stays solid and bonds
-    // into the carrier floor while the neck above it is free to flex.
+    // Rail-stub X ranges (left/right of the tab notch); the stub reliefs
+    // below clear only these ranges. The tab itself is rigid and stays fully
+    // bonded to the carrier floor (compliance lives in the rail's spring
+    // finger instead -- see latch_rail()), so no separate notch relief is cut.
     stub1_x0 = latch_rail_x0;
     stub1_x1 = latch_tab_x0 - clearance;
     stub2_x0 = latch_tab_x0 + latch_tab_w + clearance;
@@ -194,9 +216,9 @@ module carrier() {
         difference() {
             carrier_shell();
             // Relief for each rigid rail stub (plus clearance) so the carrier's
-            // flat floor never touches them; the notch/tab region between the
-            // stubs is relieved separately below (isolation relief), starting
-            // above the tab's bonded root so the two reliefs don't overlap it.
+            // flat floor never touches them; the tab region between the stubs
+            // stays unrelieved so it bonds fully into the carrier floor (it is
+            // rigid -- no neck to free for flexing).
             translate([stub1_x0 - rib - clearance, latch_rail_y0 - rib - clearance, -0.1])
                 cube([stub1_x1 - stub1_x0 + 2 * clearance,
                       latch_rail_depth + 2 * clearance,
@@ -205,20 +227,6 @@ module carrier() {
                 cube([stub2_x1 - stub2_x0 + 2 * clearance,
                       latch_rail_depth + 2 * clearance,
                       hook_height + clearance + 0.1]);
-            // Isolation relief for the flex-tab notch: carrier_shell() leaves a
-            // solid floor from z 0..2, which used to fuse most of the tab's
-            // z 1.0..2.5 neck into that floor (only 0.5 mm of the 1.5 mm neck
-            // was free to flex). This clears the shell's floor material above
-            // the tab's bonded root (z 0..tab_root_h) across the notch's full
-            // width plus extra lateral room, so the whole neck -- and the
-            // fillets above/below it -- can flex freely; only the root itself
-            // stays fused to the carrier floor.
-            translate([stub1_x1 - rib - notch_flex_gap,
-                       latch_rail_y0 - rib - clearance,
-                       tab_root_h])
-                cube([stub2_x0 - stub1_x1 + 2 * notch_flex_gap,
-                      latch_rail_depth + 2 * clearance,
-                      5 - tab_root_h]);
             // Relief frame (C-shaped, open on the near/front side) around each
             // receiver housing: clears the housing's side walls, back wall, and
             // roof (plus clearance), but leaves the hook's own footprint solid and
@@ -252,50 +260,17 @@ module carrier() {
 }
 
 module latch_tab() {
-    // Root: solid, full nominal width, bonded directly into the carrier's floor
-    // (see carrier_shell -- floor spans z 0..2) so the tab is a continuous solid
-    // with the shell instead of a disconnected block in the relief channel.
-    // Above the root, carrier() now cuts an isolation relief through the whole
-    // notch (see carrier()'s notch_flex_gap cut) so the neck and foot below are
-    // truly free-standing -- only this root remains fused to the shell.
+    // Rigid engaging tab: a single solid, full-height, full-nominal-width
+    // block bonded directly into the carrier's floor. The compliance needed
+    // to clear the rail's retention ridge now lives entirely in the rail's
+    // spring finger (see latch_rail()), so the tab itself carries load through
+    // durable, unflexed geometry rather than acting as its own flexure.
     foot_x0 = latch_tab_x0 + clearance - rib;
     foot_w = latch_tab_w - 2 * clearance;
-    neck_x0 = latch_tab_x0 + (latch_tab_w - tab_neck_w) / 2 - rib;
     tab_y0 = latch_rail_y0 + clearance - rib;
     tab_yw = latch_rail_depth - 2 * clearance;
     translate([foot_x0, tab_y0, 0])
-        cube([foot_w, tab_yw, tab_root_h]);
-    // Root-to-neck fillet: a tapered hull (rather than an abrupt width step)
-    // from the root's full width up to the neck's reduced width, reducing the
-    // stress concentration at the base of the flexure.
-    translate([0, tab_y0, 0])
-        hull() {
-            translate([foot_x0, 0, tab_root_h - 0.01])
-                cube([foot_w, tab_yw, 0.01]);
-            translate([neck_x0, 0, tab_root_h + fillet_h])
-                cube([tab_neck_w, tab_yw, 0.01]);
-        }
-    // Neck: reduced-width compliant beam giving the foot room to flex sideways
-    // past the rail's retention ridge on insertion and removal. This straight
-    // section, plus the fillets on either side of it, spans the full nominal
-    // neck band (z tab_root_h .. tab_root_h + tab_neck_h) and is now entirely
-    // clear of the carrier's floor, free to flex.
-    translate([neck_x0, tab_y0, tab_root_h + fillet_h])
-        cube([tab_neck_w, tab_yw, tab_neck_h - 2 * fillet_h]);
-    // Neck-to-foot fillet: mirrors the root-to-neck fillet, tapering back out
-    // to the full engaging width.
-    translate([0, tab_y0, 0])
-        hull() {
-            translate([neck_x0, 0, tab_root_h + tab_neck_h - fillet_h])
-                cube([tab_neck_w, tab_yw, 0.01]);
-            translate([foot_x0, 0, tab_root_h + tab_neck_h + 0.01])
-                cube([foot_w, tab_yw, 0.01]);
-        }
-    // Foot: back to the tab's full nominal width so it presents an engaging face
-    // to the rail's retention ridge (see latch_rail()); it intentionally overlaps
-    // the ridge band by design, requiring the neck above to flex during seating.
-    translate([foot_x0, tab_y0, tab_root_h + tab_neck_h])
-        cube([foot_w, tab_yw, hook_height - tab_root_h - tab_neck_h]);
+        cube([foot_w, tab_yw, hook_height]);
 }
 
 module flex_clip() {
