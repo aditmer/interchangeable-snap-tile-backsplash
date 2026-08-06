@@ -7,6 +7,7 @@ millimetres and exports one part through the `part` selector:
 | --- | --- |
 | `grid` | One modular mounting-grid section |
 | `carrier` | One structural 3 x 6 inch tile carrier |
+| `carrier_assembly` | Non-printable carrier plus inserted clip preview |
 | `flex_clip` | Integral-flexure comparison concept |
 | `spring_clip` | Replaceable clip concept |
 | `coupon` | Three clearance variants: 0.20, 0.35, 0.50 mm |

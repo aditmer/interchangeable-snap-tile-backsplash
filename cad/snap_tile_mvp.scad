@@ -31,6 +31,8 @@ latch_rail_x0 = rib + 10;
 latch_rail_x1 = pitch_w - rib - 10;
 latch_rail_y0 = clip_datum;
 latch_rail_depth = 3;
+clip_mount_x0 = latch_tab_x0 - clearance - rib + 0.8;
+clip_mount_y0 = latch_rail_y0 + clearance - rib;
 // Latch geometry: the tab is a single rigid, full-height block bonded directly
 // into the carrier floor (durable, load-carrying, replaceable per-tile part).
 // Compliance and retention live in the separately replaceable spring_clip.
@@ -115,7 +117,7 @@ bond_eps = 0.6;
 receiver_back = 1.5;
 receiver_roof = 1.5;
 
-part = "grid"; // grid, carrier, flex_clip, spring_clip, coupon, hook_coupon, latch_coupon, registration_coupon, panel
+part = "grid"; // grid, carrier, carrier_assembly, flex_clip, spring_clip, coupon, hook_coupon, latch_coupon, registration_coupon, panel
 
 module rounded_box(size, radius = 1.5) {
     translate([radius, radius, radius]) {
@@ -127,7 +129,7 @@ module rounded_box(size, radius = 1.5) {
 }
 
 module grid_section() {
-    // The inspection hole is cut in three bands rather than one, leaving solid
+    // The inspection hole is cut in two bands, leaving solid
     // full-width bridges under the latch rail and each upper-receiver housing so
     // those features bond into the perimeter frame instead of floating over the
     // open center.
@@ -228,8 +230,6 @@ module carrier_shell() {
 
 module carrier() {
     housing_wall = 1.5;
-    clip_x0 = latch_tab_x0 - clearance - rib - 1.5;
-    clip_y0 = latch_rail_y0 + clearance - rib;
     // Rail-stub X ranges (left/right of the tab notch); the stub reliefs
     // below clear only these ranges. The tab itself is rigid and stays fully
     // bonded to the carrier floor; the service clip supplies compliance.
@@ -273,17 +273,26 @@ module carrier() {
                               hook_depth + 0.1,
                               hook_env_h + receiver_roof + clearance + 0.6]);
                 }
-            // Service-clip pocket: the base is retained in the carrier floor
-            // while the finger remains replaceable from the lower edge.
-            translate([clip_x0 - 0.2, clip_y0 - 0.2, 1.4])
+            // Service-clip pocket. Side ledges added below retain the
+            // separately printed clip without fusing it to the carrier.
+            translate([clip_mount_x0 - 0.2, clip_mount_y0 - 0.2, 1.4])
                 cube([2.4, latch_rail_depth + 0.4, 1.0]);
         }
         // Each hook's own footprint remains solid and continuous with the carrier.
         upper_hook(hook_local_x_left);
         upper_hook(hook_local_x_right);
-        translate([clip_x0, clip_y0, 1.4])
-            spring_clip_mount();
+        translate([clip_mount_x0 - 0.2, clip_mount_y0 - 0.2, 1.4])
+            cube([0.2, latch_rail_depth + 0.4, 0.6]);
+        translate([clip_mount_x0 + 2.0, clip_mount_y0 - 0.2, 1.4])
+            cube([0.2, latch_rail_depth + 0.4, 0.6]);
     }
+}
+
+module carrier_assembly() {
+    // Preview only: print carrier() and spring_clip() as separate parts.
+    carrier();
+    translate([rib + clip_mount_x0, rib + clip_mount_y0, mount_z + 1.4])
+        spring_clip_mount();
 }
 
 module flex_clip() {
@@ -292,7 +301,7 @@ module flex_clip() {
         rounded_box([20, 18, 4], 1.5);
         translate([4, 5, -0.1]) cube([12, 10, 4.2]);
     }
-    translate([8, 12, 4]) cube([4, 6, 5]);
+    translate([8, 12, 3.8]) cube([4, 6, 5.2]);
 }
 
 module spring_clip_mount() {
@@ -349,8 +358,9 @@ module latch_coupon() {
     for (i = [0:2]) {
         c = 0.20 + i * 0.15;
         translate([i * 32, 0, 0]) {
-            translate([2, 2, 0]) coupon_latch_receiver(c);
-            translate([18, 2, 0]) coupon_latch_clip(c);
+            translate([2, 2, 0]) coupon_latch_receiver(0.35);
+            // Hold the receiver datum fixed; vary the mating clip offset.
+            translate([18 + (c - 0.35), 2, 0]) coupon_latch_clip(0.35);
         }
     }
 }
@@ -360,9 +370,12 @@ module registration_coupon() {
         c = 0.20 + i * 0.15;
         translate([i * 32, 0, 0]) {
             translate([2, 2, 0]) cube([10, 10, wall]);
-            translate([18, 2, 0]) cube([10, 10, wall]);
             translate([4, 5, wall]) cube([6 - 2 * c, 4 - 2 * c, 2]);
-            translate([20, 4, 0]) cube([6 + 2 * c, 4 + 2 * c, wall]);
+            difference() {
+                translate([18, 2, 0]) cube([10, 10, wall]);
+                translate([20, 4, -0.1])
+                    cube([6 + 2 * c, 4 + 2 * c, wall + 0.2]);
+            }
         }
     }
 }
@@ -397,7 +410,7 @@ module coupon_latch_clip(c) {
         cube([1.2, 6, 2]);
     translate([1.2, 2, 2])
         cube([0.8, 4, 3]);
-    translate([0.3 - c, 2, 4])
+    translate([0.3, 2, 4])
         cube([0.9 + c, 4, 1]);
 }
 
@@ -410,6 +423,7 @@ module panel() {
 
 if (part == "grid") grid_section();
 if (part == "carrier") carrier();
+if (part == "carrier_assembly") carrier_assembly();
 if (part == "flex_clip") flex_clip();
 if (part == "spring_clip") spring_clip();
 if (part == "coupon") coupon();

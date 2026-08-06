@@ -17,6 +17,9 @@ photos, failure mode, and decision. A blank template is provided at
 - **Retention:** apply a controlled outward pull and document the first release mode.
 - **Neighbor replacement:** remove the center cartridge without disturbing the eight surrounding positions.
 - **Grid attachment:** operate a full panel while monitoring wall fasteners, adhesive, and grid joints.
+- **Latch assembly:** export `carrier` and `spring_clip` as separate printable parts; use
+  `carrier_assembly` only as a non-printable fit preview and verify the clip can be
+  inserted, retained, and removed without fusing to the carrier.
 
 ### Fit and tolerance coupons (issue #5)
 
