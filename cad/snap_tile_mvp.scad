@@ -16,13 +16,19 @@ clip_datum = 12.0;
 release_depth = 10.0;
 mount_z = wall;
 registration_clearance = 0.25;
+clearance = 0.35;
 interface_y = pitch_h - rib - hook_depth;
 hook_local_y = interface_y - rib + clearance;
 hook_local_x_left = 16 - hook_depth / 2 + clearance;
 hook_local_x_right = tile_w - 12 - hook_depth + clearance;
+latch_tab_w = 20;
+latch_tab_x0 = pitch_w / 2 - latch_tab_w / 2;
+latch_rail_x0 = rib + 10;
+latch_rail_x1 = pitch_w - rib - 10;
+latch_rail_y0 = clip_datum;
+latch_rail_depth = 3;
 
 part = "grid"; // grid, carrier, flex_clip, spring_clip, coupon, panel
-clearance = 0.35;
 
 module rounded_box(size, radius = 1.5) {
     translate([radius, radius, radius]) {
@@ -53,8 +59,14 @@ module grid_section() {
     // Upper hook receptacles and lower latch rails.
     for (x = [rib + 16, pitch_w - rib - 16])
         upper_receiver(x);
-    translate([rib + 10, clip_datum, wall])
-        cube([pitch_w - 2 * rib - 20, 3, hook_height]);
+    difference() {
+        translate([latch_rail_x0, latch_rail_y0, wall])
+            cube([latch_rail_x1 - latch_rail_x0, latch_rail_depth, hook_height]);
+        // Clears the carrier's flexing latch tab (plus clearance on every side) so
+        // the rigid rail can never touch the tab once the carrier is seated.
+        translate([latch_tab_x0 - clearance, latch_rail_y0 - 0.1, wall - 0.1])
+            cube([latch_tab_w + 2 * clearance, latch_rail_depth + 0.2, hook_height + 0.2]);
+    }
     // Bottom key mates with the receiving slot in the next section.
     translate([pitch_w / 2 - 3 + registration_clearance,
                -2 + registration_clearance, 0])
@@ -63,26 +75,39 @@ module grid_section() {
 }
 
 module upper_receiver(x) {
-    // A pocket with a retaining ledge gives the hook a defined insertion path.
+    // Side walls flank the mating slot; the hook (see upper_hook) is inset by
+    // `clearance` from this same nominal footprint on X, Y, and Z, so sizing the
+    // cavity to the full nominal footprint gives real clearance on every axis
+    // instead of coincidentally matching the hook's bounds.
+    housing_wall = 1.5;
     difference() {
-        translate([x - hook_depth / 2, interface_y, wall])
-            cube([hook_depth, hook_depth, hook_height]);
-        translate([x - hook_depth / 2 + clearance,
-                   interface_y + clearance,
-                   wall + 1])
-            cube([hook_depth - 2 * clearance,
-                  hook_depth - 2,
-                  hook_height]);
+        translate([x - hook_depth / 2 - housing_wall, interface_y, wall])
+            cube([hook_depth + 2 * housing_wall, hook_depth, hook_height]);
+        // Cavity: the hook's full nominal footprint, left open top and bottom so
+        // the lead-in lip has clear travel and never bottoms out on a floor or
+        // back wall.
+        translate([x - hook_depth / 2, interface_y, wall - 0.1])
+            cube([hook_depth, hook_depth, hook_height + 3]);
     }
 }
 
 module upper_hook(x) {
-    translate([x, hook_local_y, 1])
-        cube([hook_depth - 2 * clearance, hook_depth - 2, hook_height - 1]);
-    // The short angled lip provides the documented lead-in.
-    translate([x, tile_h - 2, 0])
-        rotate([30, 0, 0])
-            cube([hook_depth - 2 * clearance, 2, hook_height + 1]);
+    hook_w = hook_depth - 2 * clearance;
+    hook_d = hook_depth - 2;
+    hook_top = hook_height - 1;
+    lip_rise = 1.0;
+    translate([x, hook_local_y, 1]) {
+        cube([hook_w, hook_d, hook_top]);
+        // Lead-in chamfer built with hull() so it stays fully within the tongue's
+        // own X/Y footprint; it only rises above the tongue's own top face and so
+        // cannot reach the receiver's floor or back wall once installed.
+        hull() {
+            translate([0, hook_d - 2, hook_top - 0.1])
+                cube([hook_w, 2, 0.1]);
+            translate([0, hook_d - 2, hook_top])
+                cube([hook_w, 0.1, lip_rise]);
+        }
+    }
 }
 
 module carrier_shell() {
@@ -96,12 +121,37 @@ module carrier_shell() {
 }
 
 module carrier() {
+    housing_wall = 1.5;
     translate([rib, rib, mount_z]) {
-        carrier_shell();
+        difference() {
+            carrier_shell();
+            // Relief channel over the full latch-rail footprint (plus clearance)
+            // so the carrier's flat floor never touches the rigid rail stubs on
+            // either side of the flex tab added below.
+            translate([latch_rail_x0 - rib - clearance,
+                       latch_rail_y0 - rib - clearance,
+                       -0.1])
+                cube([latch_rail_x1 - latch_rail_x0 + 2 * clearance,
+                      latch_rail_depth + 2 * clearance,
+                      hook_height + clearance + 0.1]);
+            // Relief pockets over each upper-receiver housing (plus clearance) so
+            // the carrier's flat floor never touches the housing walls that
+            // surround the hooks added below.
+            for (x = [rib + 16, pitch_w - rib - 16])
+                translate([x - hook_depth / 2 - housing_wall - clearance - rib,
+                           interface_y - clearance - rib,
+                           -0.1])
+                    cube([hook_depth + 2 * housing_wall + 2 * clearance,
+                          hook_depth + 2 * clearance,
+                          hook_height + clearance + 0.1]);
+        }
         upper_hook(hook_local_x_left);
         upper_hook(hook_local_x_right);
-        translate([tile_w / 2 - 10, clip_datum, -1])
-            cube([20, 4, hook_height + 1]);
+        // Flexing latch tab: sized clearance-smaller than the rail notch on X and
+        // Y so it seats inside the gap between the rail stubs without touching
+        // the rigid rail (see grid_section's latch-rail difference()).
+        translate([latch_tab_x0 + clearance - rib, latch_rail_y0 + clearance - rib, 0])
+            cube([latch_tab_w - 2 * clearance, latch_rail_depth - 2 * clearance, hook_height]);
     }
 }
 
