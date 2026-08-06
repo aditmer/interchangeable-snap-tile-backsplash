@@ -38,67 +38,120 @@ latch_rail_depth = 3;
 ridge_reach = 0.9;
 ridge_z0 = 3.0;
 ridge_h = 1.0;
+// Ridge tip construction allowance: hull() needs each control primitive to
+// have real (non-zero) extent, so the tip primitive below is built as a tiny
+// cube instead of a mathematical point. That cube is centered on x =
+// ridge_reach (translated back by half its own width) instead of starting
+// at ridge_reach and extending outward, so it adds only half its width to
+// the modeled max reach, not its full width. Its size is also cut 5x smaller
+// than a typical previous choice (0.01 mm) specifically so that residual is
+// sub-micron and can be safely folded into ridge_reach_eff below rather than
+// silently inflating the physical geometry past the documented ridge_reach.
+ridge_pt_eps = 0.002;
+// Modeled maximum X reach of the ridge, including the construction
+// allowance above (ridge_reach + half of ridge_pt_eps): this is the value
+// that must drive delta_pass below, not the nominal ridge_reach alone, so
+// the strain and undercut calculations match the actual rendered geometry.
+// ridge_reach_eff = 0.9 + 0.002 / 2 = 0.901 mm (vs. the previous, uncentered
+// construction, which modeled 0.91 mm while only 0.90 mm was documented).
+ridge_reach_eff = ridge_reach + ridge_pt_eps / 2;
 // Spring-finger geometry (rail side): a cantilever fixed only at its base
 // (bonded, with real volumetric overlap -- see bond_eps above -- into the
 // solid grid floor below z = wall) and free over its full height, thin in
 // the X (lateral flex) direction, with an explicit finite-radius root fillet
 // (see root_fillet_r above) instead of a square corner or a hull taper to a
 // degenerate seam. Above the fillet band the section is uniform (finger_w);
-// within the fillet band it is locally wider/stiffer, so the finger's actual
-// worst-case strain is bounded above by treating the whole length as uniform
-// finger_w, which is what the calculation below does.
+// within the fillet band it is locally wider (a shoulder-fillet step from
+// finger_w up to finger_w + root_fillet_r at z = wall), which both stiffens
+// that band and concentrates stress there -- both effects are quantified
+// below via a shoulder-fillet-in-bending stress concentration factor (Kt),
+// not just asserted as "mitigated."
 //
 // The ridge is built as a hull() from z = ridge_z0 to ridge_z0 + ridge_h, so
-// its point of maximum X reach (ridge_reach) sits at the mid-height of that
-// band, not at the finger's free tip. The strain-governing cantilever length
-// is therefore the distance from the fixed root (z = wall) to that point,
-// eff_l = ridge_z0 + ridge_h / 2 = 3.0 + 0.5 = 3.5 mm -- not hook_height
-// (4.0 mm) as an earlier revision assumed.
+// its point of maximum X reach (ridge_reach_eff) sits at the mid-height of
+// that band, not at the finger's free tip. The strain-governing cantilever
+// length is therefore the distance from the fixed root (z = wall) to that
+// point, eff_l = ridge_z0 + ridge_h / 2 = 3.0 + 0.5 = 3.5 mm -- not
+// hook_height (4.0 mm) as an earlier revision assumed.
 //
 // Clearing the ridge on insertion needs a lateral displacement of
-// delta_pass = ridge_reach - 2 * clearance = 0.9 - 2 * 0.35 = 0.20 mm. For a
-// cantilever of length eff_l = 3.5 mm and thickness finger_w = 1.0 mm
-// (bending direction), the worst-case insertion fiber strain is
-// eps_insert = 3 * finger_w * delta_pass / (2 * eff_l^2)
-//            = 3 * 1.0 * 0.20 / (2 * 3.5^2) = 0.6 / 24.5 = 0.0245, i.e.
-// ~2.45%, under the 3% allowable-strain target for printed PLA/PETG
-// flexures, with margin held in reserve for the (unquantified by this beam
-// formula) stress concentration at the root -- mitigated separately by the
-// finite-radius root_fillet_r above. Removal is symmetric about the ridge's
-// mid-height (same delta_pass, same eff_l), so eps_remove = eps_insert =
-// ~2.45%.
+// delta_pass = ridge_reach_eff - 2 * clearance = 0.901 - 2 * 0.35 =
+// 0.201 mm. For a cantilever of length eff_l = 3.5 mm and thickness
+// finger_w = 0.8 mm (bending direction), the nominal (unconcentrated)
+// worst-case insertion fiber strain is
+// eps_insert_nom = 3 * finger_w * delta_pass / (2 * eff_l^2)
+//                = 3 * 0.8 * 0.201 / (2 * 3.5^2) = 0.4824 / 24.5 = 0.01969,
+// i.e. ~1.97%.
+//
+// That nominal strain is a beam-theory average and does not by itself
+// capture the root's stress (and strain) concentration from the
+// finger_w -> finger_w + root_fillet_r shoulder fillet at z = wall. Modeling
+// that root as a stepped-flat-bar shoulder fillet in bending (Peterson /
+// Pilkey polynomial fit) with D = finger_w + root_fillet_r = 1.2 mm,
+// d = finger_w = 0.8 mm, r = root_fillet_r = 0.4 mm:
+//   h = (D - d) / 2 = 0.2 mm, h / r = 0.5 (in the 0.1-2.0 fit range), so
+//   C1 = 1.006 + 0.967 * sqrt(h/r) + 0.013 * (h/r)       = 1.696
+//   C2 = -0.270 - 2.372 * sqrt(h/r) + 0.708 * (h/r)      = -1.594
+//   C3 = 0.662 + 1.157 * sqrt(h/r) - 0.908 * (h/r)       = 1.026
+//   C4 = -0.405 + 0.249 * sqrt(h/r) - 0.200 * (h/r)      = -0.329
+//   x = 2h / D = 0.4 / 1.2 = 0.333
+//   Kt = C1 + C2 * x + C3 * x^2 + C4 * x^3 = 1.267
+// (Pilkey, "Peterson's Stress Concentration Factors", shoulder-fillet-in-
+// bending chart; C1..C4 depend only on h/r, which is fixed at 0.5 here
+// because D - d always equals root_fillet_r by construction, independent of
+// finger_w.)
+//
+// Peak local (root) strain = Kt * nominal strain:
+// eps_insert = Kt * eps_insert_nom = 1.267 * 0.01969 = 0.02495, i.e. ~2.49%,
+// under the 3% allowable-strain target for printed PLA/PETG flexures.
+// Removal is symmetric about the ridge's mid-height (same delta_pass, same
+// eff_l), so eps_remove = eps_insert = ~2.49%.
 //
 // In the settled (fully seated) position the tab's undercut (see
 // latch_tab()) relieves all but settle_interference = 0.05 mm of overlap, so
 // the finger is left only lightly loaded rather than held open at the full
 // delta_pass:
-// eps_settled = 3 * finger_w * settle_interference / (2 * eff_l^2)
-//             = 3 * 1.0 * 0.05 / 24.5 = 0.0061, i.e. ~0.61%.
+// eps_settled_nom = 3 * finger_w * settle_interference / (2 * eff_l^2)
+//                 = 3 * 0.8 * 0.05 / 24.5 = 0.0049, i.e. ~0.49% nominal;
+// eps_settled = Kt * eps_settled_nom = 1.267 * 0.0049 = 0.0062, i.e. ~0.62%.
 //
-// All three load states (insertion 2.45%, removal 2.45%, settled 0.61%) stay
-// below the 3% allowable-strain target against the modeled section: eff_l
-// and finger_w above are unaffected by root_fillet_r (a local, sub-length
-// stiffening only) or by bond_eps (an extension into already-rigid material
-// below the fixed root), so this recalculation matches the actual bonded,
-// filleted geometry below.
-finger_w = 1.0;
-finger_gap = 0.5;
+// All three load states -- insertion ~2.49%, removal ~2.49%, settled ~0.62%
+// -- stay below the 3% allowable-strain target against the actual filleted,
+// bonded root section (Kt applied), not just the nominal uniform-section
+// beam estimate.
+finger_w = 0.8;
+// Isolation slot width away from the root fillet band. The root fillet
+// narrows the open slot locally (see root_fillet_r below), so finger_gap
+// alone does not guarantee a printable gap at the root; that is enforced
+// separately by min_slot_w and the assert() below.
+finger_gap = 0.9;
 // Root fillet: an explicit, printable constant radius (not a hull taper to a
 // near-zero seam) blending the isolation slot's lower corner into the floor.
 // Above this band the slot is a constant finger_gap width, so the finger's
 // cross-section is uniform (= finger_w) everywhere the beam calculation
-// below actually applies; within the fillet band the section is locally
-// wider (stiffer) than finger_w, so treating the whole eff_l (measured from
-// z = wall, below) as uniform finger_w is a conservative over-estimate of
-// strain, not an under-estimate.
+// above actually applies; within the fillet band the section is locally
+// wider (finger_w + root_fillet_r, at most, right at z = wall) -- the
+// shoulder-fillet step quantified via Kt above, not an unquantified
+// allowance.
 root_fillet_r = 0.4;
+// Minimum printable slot width for the assumed process (0.4 mm nozzle,
+// 0.2 mm layer height FDM): a void narrower than one nozzle diameter is not
+// reliably resolved by common slicers and may print closed, silently
+// bonding the finger to the rest of the stub over that band and defeating
+// the isolation slot's whole purpose. The root fillet narrows the open slot
+// from finger_gap (away from the root) down to finger_gap - root_fillet_r
+// at z = wall, so that narrowed width -- not finger_gap alone -- is the
+// value that must clear min_slot_w.
+min_slot_w = 0.4;
+assert(finger_gap - root_fillet_r >= min_slot_w,
+       "latch_rail() isolation slot narrower than the printable minimum at the root fillet");
 // Bonding epsilon: the spring finger must have real volumetric overlap with
 // the solid grid floor it's fixed to, and the ridge must have real
 // volumetric overlap with the finger it rides on -- not just a coincident
 // face at z = wall / x = face_x. OpenSCAD explicitly warns that unions of
 // exactly-touching faces can render non-manifold or as separate shells.
 // bond_eps sets how far each feature is extended into its parent solid; it
-// is well within finger_w (1.0 mm) and does not change any externally
+// is well within finger_w (0.8 mm) and does not change any externally
 // visible dimension (hook_height, ridge_reach, eff_l, etc.).
 bond_eps = 0.6;
 // Tab-side undercut sizing (see latch_tab()): removes delta_pass minus the
@@ -218,15 +271,21 @@ module latch_rail() {
     // (rather than starting exactly at its face) so it has real volumetric
     // overlap with the finger, not a coincident face at x = face_x. This
     // only moves material backward into the finger's own solid interior
-    // (bond_eps = 0.6 mm is well within finger_w = 1.0 mm); ridge_reach,
+    // (bond_eps = 0.6 mm is well within finger_w = 0.8 mm); ridge_reach,
     // measured from face_x, and therefore eff_l and the strain calculation
     // above are unaffected.
+    //
+    // The tip primitive is centered on x = ridge_reach (translated back by
+    // ridge_pt_eps / 2) rather than starting at ridge_reach and extending
+    // outward, so it contributes only ridge_pt_eps / 2 to the modeled max
+    // reach -- ridge_reach_eff above already includes that contribution, so
+    // the modeled geometry and the documented/calculated reach agree.
     translate([face_x, latch_rail_y0 + 0.2, wall])
         hull() {
             translate([-bond_eps, 0, ridge_z0])
                 cube([0.01 + bond_eps, latch_rail_depth - 0.4, 0.01]);
-            translate([ridge_reach, 0, ridge_z0 + ridge_h / 2])
-                cube([0.01, latch_rail_depth - 0.4, 0.01]);
+            translate([ridge_reach - ridge_pt_eps / 2, 0, ridge_z0 + ridge_h / 2])
+                cube([ridge_pt_eps, latch_rail_depth - 0.4, ridge_pt_eps]);
             translate([-bond_eps, 0, ridge_z0 + ridge_h])
                 cube([0.01 + bond_eps, latch_rail_depth - 0.4, 0.01]);
         }
@@ -359,8 +418,11 @@ module latch_tab() {
     // in the settled position, letting the finger spring back close to
     // neutral instead of staying held open. undercut_depth removes the rest
     // of the insertion/removal interference (delta_pass, see the calculation
-    // above finger_w).
-    delta_pass = ridge_reach - 2 * clearance;
+    // above finger_w). Uses ridge_reach_eff (the modeled max reach,
+    // including the ridge tip's construction allowance) so the undercut
+    // clears the ridge as actually rendered, not just its nominal
+    // ridge_reach.
+    delta_pass = ridge_reach_eff - 2 * clearance;
     undercut_depth = delta_pass - settle_interference;
     difference() {
         translate([foot_x0, tab_y0, 0])
