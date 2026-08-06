@@ -20,14 +20,17 @@ photos, failure mode, and decision. A blank template is provided at
 - **Latch assembly:** export `carrier` and `spring_clip` as separate printable parts; use
   `carrier_assembly` only as a non-printable fit preview and verify the clip can be
   inserted, retained, and removed without fusing to the carrier.
+- **Flexure comparison:** export `flex_coupon` and compare insertion force, release
+  force, and accidental release against the replaceable `spring_clip` interface.
 
 ### Fit and tolerance coupons (issue #5)
 
 Export `part = "coupon"` from `cad/snap_tile_mvp.scad`. Print the 0.20, 0.35, and
 0.50 mm clearance variants without changing orientation. Measure the paired clearance
 bars and printed-versus-nominal dimensions as a dimensional screen. Also export
-`hook_coupon`, `latch_coupon`, and `registration_coupon` to measure hook/receiver,
-latch/clip, and registration key/slot fit, then confirm final engagement on the
+`hook_coupon`, `latch_coupon`, `registration_coupon`, and `flex_coupon` to measure
+hook/receiver, latch/clip, registration key/slot, and comparison-flexure fit, then
+confirm final engagement on the
 assembled carrier/grid parts before selecting a revision.
 Recommend a tolerance window only after all three variants have been inspected.
 

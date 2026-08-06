@@ -1,7 +1,7 @@
 # MVP CAD
 
 `snap_tile_mvp.scad` is a parameterized OpenSCAD source for issues #2-#5. It uses
-millimetres and exports one part through the `part` selector:
+millimetres and exports one of 11 parts through the `part` selector:
 
 | Part | Use |
 | --- | --- |
@@ -9,6 +9,7 @@ millimetres and exports one part through the `part` selector:
 | `carrier` | One structural 3 x 6 inch tile carrier |
 | `carrier_assembly` | Non-printable carrier plus inserted clip preview |
 | `flex_clip` | Integral-flexure comparison concept |
+| `flex_coupon` | Fit-force and release coupon for the flexure comparison |
 | `spring_clip` | Replaceable clip concept |
 | `coupon` | Three clearance variants: 0.20, 0.35, 0.50 mm |
 | `hook_coupon` | Upper hook/receiver clearance variants |

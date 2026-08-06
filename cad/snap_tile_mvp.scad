@@ -20,6 +20,9 @@ clip_datum = 12.0;
 release_depth = 10.0;
 mount_z = wall;
 registration_clearance = 0.25;
+fastener_diameter = 4.5;
+fastener_boss_radius = 6.0;
+fastener_offset = 8.0;
 clearance = 0.35;
 interface_y = pitch_h - rib - hook_depth;
 hook_local_y = interface_y - rib + clearance;
@@ -31,7 +34,9 @@ latch_rail_x0 = rib + 10;
 latch_rail_x1 = pitch_w - rib - 10;
 latch_rail_y0 = clip_datum;
 latch_rail_depth = 3;
-clip_mount_x0 = latch_tab_x0 - clearance - rib + 0.8;
+// Position the finger beyond the rail end while the ridge overlaps it by
+// 0.15 mm, providing the intended insertion interference and seated capture.
+clip_mount_x0 = latch_tab_x0 - clearance - rib + 0.35;
 clip_mount_y0 = latch_rail_y0 + clearance - rib;
 // Latch geometry: the tab is a single rigid, full-height block bonded directly
 // into the carrier floor (durable, load-carrying, replaceable per-tile part).
@@ -117,7 +122,7 @@ bond_eps = 0.6;
 receiver_back = 1.5;
 receiver_roof = 1.5;
 
-part = "grid"; // grid, carrier, carrier_assembly, flex_clip, spring_clip, coupon, hook_coupon, latch_coupon, registration_coupon, panel
+part = "grid"; // grid, carrier, carrier_assembly, flex_clip, flex_coupon, spring_clip, coupon, hook_coupon, latch_coupon, registration_coupon, panel
 
 module rounded_box(size, radius = 1.5) {
     translate([radius, radius, radius]) {
@@ -150,6 +155,16 @@ module grid_section() {
                 cube([6 + 2 * registration_clearance,
                       4 + 2 * registration_clearance, wall + 0.2]);
     }
+    // Reinforced corner bosses provide supported fastener locations outside
+    // the inspection opening; each hole is sized by the attachment parameter.
+    for (x = [fastener_offset, pitch_w - fastener_offset])
+        for (y = [fastener_offset, pitch_h - fastener_offset])
+            translate([x, y, 0])
+                difference() {
+                    cylinder(r = fastener_boss_radius, h = wall, $fn = 48);
+                    translate([0, 0, -0.1])
+                        cylinder(r = fastener_diameter / 2, h = wall + 0.2, $fn = 32);
+                }
     // Perimeter ribs define the visible grout field.
     translate([0, 0, wall]) cube([pitch_w, rib, wall]);
     translate([0, pitch_h - rib, wall]) cube([pitch_w, rib, wall]);
@@ -282,9 +297,9 @@ module carrier() {
         upper_hook(hook_local_x_left);
         upper_hook(hook_local_x_right);
         translate([clip_mount_x0 - 0.2, clip_mount_y0 - 0.2, 1.4])
-            cube([0.2, latch_rail_depth + 0.4, 0.6]);
-        translate([clip_mount_x0 + 2.0, clip_mount_y0 - 0.2, 1.4])
-            cube([0.2, latch_rail_depth + 0.4, 0.6]);
+            cube([0.4, latch_rail_depth + 0.4, 0.6]);
+        translate([clip_mount_x0 + 2.1, clip_mount_y0 - 0.2, 1.4])
+            cube([0.4, latch_rail_depth + 0.4, 0.6]);
     }
 }
 
@@ -315,7 +330,7 @@ module spring_clip_mount() {
             cube([finger_w, finger_depth, hook_height - root_fillet_r]);
         translate([0, 0.4, 0])
             cube([root_w, finger_depth, root_fillet_r]);
-        translate([root_fillet_r + finger_w / 2, 0.4 + finger_depth, root_fillet_r])
+        translate([root_fillet_r, 0.4 + finger_depth, root_fillet_r])
             rotate([90, 0, 0])
                 cylinder(r = root_fillet_r, h = finger_depth, $fn = 24);
         translate([root_fillet_r - ridge_reach_eff, 0.4, ridge_z0])
@@ -326,6 +341,26 @@ module spring_clip_mount() {
 module spring_clip() {
     // Standalone service-clip export uses the same geometry as carrier().
     spring_clip_mount();
+}
+
+module flex_coupon() {
+    // Detachable mating pieces for the integral-flexure comparison concept.
+    for (i = [0:2]) {
+        c = 0.20 + i * 0.15;
+        translate([i * 32, 0, 0]) {
+            translate([2, 2, 0]) coupon_receiver(c);
+            translate([18, 2, 0]) flex_coupon_tab(c);
+        }
+    }
+}
+
+module flex_coupon_tab(c) {
+    translate([1, 1, 0])
+        cube([6 - 2 * c, 6, 3]);
+    translate([2, 2, 3])
+        cube([2, 4, 3]);
+    translate([2, 2, 6])
+        cube([2 + c, 4, 1]);
 }
 
 module coupon() {
@@ -360,7 +395,7 @@ module latch_coupon() {
         translate([i * 32, 0, 0]) {
             translate([2, 2, 0]) coupon_latch_receiver(0.35);
             // Hold the receiver datum fixed; vary the mating clip offset.
-            translate([18 + (c - 0.35), 2, 0]) coupon_latch_clip(0.35);
+            translate([18, 2, 0]) coupon_latch_clip(c);
         }
     }
 }
@@ -425,6 +460,7 @@ if (part == "grid") grid_section();
 if (part == "carrier") carrier();
 if (part == "carrier_assembly") carrier_assembly();
 if (part == "flex_clip") flex_clip();
+if (part == "flex_coupon") flex_coupon();
 if (part == "spring_clip") spring_clip();
 if (part == "coupon") coupon();
 if (part == "hook_coupon") hook_coupon();
