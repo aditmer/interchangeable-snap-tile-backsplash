@@ -35,23 +35,47 @@ latch_rail_depth = 3;
 // into the carrier floor (durable, load-carrying, replaceable per-tile part);
 // the compliance instead lives in a spring finger on the rail (see
 // latch_rail()), which is the permanent, installed-once part.
-ridge_reach = 1.0;
+ridge_reach = 0.9;
 ridge_z0 = 3.0;
 ridge_h = 1.0;
 // Spring-finger geometry (rail side): a cantilever fixed only at its base
 // (bonded to the solid grid floor below z = wall) and free over its full
-// height, thin in the X (lateral flex) direction. Clearing the ridge needs a
-// lateral displacement of about ridge_reach - 2 * clearance = 1.0 - 2 * 0.35 =
-// 0.30 mm. For a cantilever of length finger_l = hook_height = 4.0 mm and
-// thickness finger_w = 1.0 mm (bending direction), the max fiber strain is
-// eps = 3 * finger_w * 0.30 / (2 * finger_l^2) = 3 * 1.0 * 0.30 / (2 * 16)
-// = 0.028, i.e. ~2.8%, under a 3% allowable-strain target for printed
-// PLA/PETG flexures. A neck sized instead on the tab (root/neck/foot within
-// the same hook_height budget) could only offer ~0.7 mm of straight flexure
-// length, which would require ~29% strain for the same displacement -- far
-// beyond a safe target -- so the compliance is moved to the rail instead.
+// height, thin in the X (lateral flex) direction, with a rounded root (see
+// root_fillet_h below) instead of a square corner.
+//
+// The ridge is built as a hull() from z = ridge_z0 to ridge_z0 + ridge_h, so
+// its point of maximum X reach (ridge_reach) sits at the mid-height of that
+// band, not at the finger's free tip. The strain-governing cantilever length
+// is therefore the distance from the fixed root (z = wall) to that point,
+// eff_l = ridge_z0 + ridge_h / 2 = 3.0 + 0.5 = 3.5 mm -- not hook_height
+// (4.0 mm) as an earlier revision assumed.
+//
+// Clearing the ridge on insertion/removal needs a lateral displacement of
+// delta_pass = ridge_reach - 2 * clearance = 0.9 - 2 * 0.35 = 0.20 mm. For a
+// cantilever of length eff_l = 3.5 mm and thickness finger_w = 1.0 mm
+// (bending direction), the worst-case insertion/removal fiber strain is
+// eps_pass = 3 * finger_w * delta_pass / (2 * eff_l^2)
+//          = 3 * 1.0 * 0.20 / (2 * 3.5^2) = 0.6 / 24.5 = 0.0245, i.e. ~2.45%,
+// under the 3% allowable-strain target for printed PLA/PETG flexures, with
+// margin held in reserve for the (unquantified by this beam formula) stress
+// concentration at the root -- mitigated separately by root_fillet_h below.
+// Insertion and removal are symmetric about the ridge's mid-height, so both
+// share this same 2.45% worst-case figure.
+//
+// In the settled (fully seated) position the tab's undercut (see
+// latch_tab()) relieves all but settle_interference = 0.05 mm of overlap, so
+// the finger is left only lightly loaded rather than held open at the full
+// delta_pass:
+// eps_settled = 3 * finger_w * settle_interference / (2 * eff_l^2)
+//             = 3 * 1.0 * 0.05 / 24.5 = 0.0061, i.e. ~0.61%.
 finger_w = 1.0;
 finger_gap = 0.5;
+root_fillet_h = 1.0;
+// Tab-side undercut sizing (see latch_tab()): removes delta_pass minus the
+// small residual settle_interference retained for tactile retention, over
+// the ridge's own z-band (plus a manufacturing margin).
+settle_interference = 0.05;
+undercut_margin = 0.2;
 // Upper-receiver capturing geometry: a back wall and roof beyond the hook's
 // nominal footprint so the installed lip is captured, not just clearance-fit.
 receiver_back = 1.5;
@@ -118,15 +142,16 @@ module latch_rail() {
     // both at once. A single ridge lets clearance be taken up entirely toward
     // the open (ridge-free) side.
     //
-    // The ridge itself now sits on a compliant spring finger, not on the rigid
-    // stub body: a full-height cantilever (see finger_w/finger_gap above),
-    // isolated from the rest of the stub by a thin slot over its whole height
-    // and fixed only where its base bonds into the solid grid floor below
-    // z = wall. This gives a flexure length of finger_l = hook_height = 4 mm
-    // (vs. the ~0.7 mm a tab-side neck could fit in the same envelope), so it
-    // deflects out of the way on insertion/removal within the documented
-    // strain target and springs back to engage the rigid tab foot once
-    // settled.
+    // The ridge itself sits on a compliant spring finger, not on the rigid
+    // stub body: a cantilever (see finger_w/finger_gap above), isolated from
+    // the rest of the stub by a thin slot over its whole height and fixed
+    // only where its base bonds into the solid grid floor below z = wall.
+    // The strain-governing length is eff_l = ridge_z0 + ridge_h / 2 = 3.5 mm
+    // (the height of the ridge's point of maximum reach, not the finger's
+    // free tip -- see the calculation above finger_w). The finger deflects
+    // out of the way on insertion/removal within that documented strain
+    // target and, thanks to the tab-side undercut (see latch_tab()), is left
+    // only lightly loaded rather than held open once settled.
     face_x = latch_tab_x0 - clearance;
     finger_x0 = face_x - finger_w;
     difference() {
@@ -137,8 +162,16 @@ module latch_rail() {
         // Isolation slot: frees the spring finger from the rest of the left
         // stub across its full height so only its base (below z = wall)
         // fixes it, matching the cantilever model used in the strain check.
-        translate([finger_x0 - finger_gap, latch_rail_y0 - 0.1, wall - 0.1])
-            cube([finger_gap, latch_rail_depth + 0.2, hook_height + 0.2]);
+        // The slot is hulled from a near-zero-width seam at the very base up
+        // to its full finger_gap width over root_fillet_h, leaving a rounded
+        // (rather than square) root fillet on the finger -- reducing the
+        // stress concentration the flat beam formula above doesn't capture.
+        hull() {
+            translate([finger_x0 - finger_gap / 2, latch_rail_y0 - 0.1, wall - 0.1])
+                cube([0.001, latch_rail_depth + 0.2, 0.001]);
+            translate([finger_x0 - finger_gap, latch_rail_y0 - 0.1, wall + root_fillet_h])
+                cube([finger_gap, latch_rail_depth + 0.2, hook_height + 0.2 - root_fillet_h]);
+        }
     }
     translate([face_x, latch_rail_y0 + 0.2, wall])
         hull() {
@@ -262,15 +295,31 @@ module carrier() {
 module latch_tab() {
     // Rigid engaging tab: a single solid, full-height, full-nominal-width
     // block bonded directly into the carrier's floor. The compliance needed
-    // to clear the rail's retention ridge now lives entirely in the rail's
-    // spring finger (see latch_rail()), so the tab itself carries load through
-    // durable, unflexed geometry rather than acting as its own flexure.
+    // to clear the rail's retention ridge lives in the rail's spring finger
+    // (see latch_rail()), so the tab itself carries load through durable,
+    // unflexed geometry rather than acting as its own flexure.
     foot_x0 = latch_tab_x0 + clearance - rib;
     foot_w = latch_tab_w - 2 * clearance;
     tab_y0 = latch_rail_y0 + clearance - rib;
     tab_yw = latch_rail_depth - 2 * clearance;
-    translate([foot_x0, tab_y0, 0])
-        cube([foot_w, tab_yw, hook_height]);
+    // Settled-position undercut: because the tab's z-span exactly covers the
+    // notch height, a plain rigid block would keep the ridge's whole z-band
+    // permanently occupied once seated, so the finger could never relax
+    // (the flaw the previous round left unfixed). This recess, cut into the
+    // tab's ridge-facing shoulder over the ridge's own z-band (plus
+    // undercut_margin), leaves only settle_interference of residual overlap
+    // in the settled position, letting the finger spring back close to
+    // neutral instead of staying held open. undercut_depth removes the rest
+    // of the insertion/removal interference (delta_pass, see the calculation
+    // above finger_w).
+    delta_pass = ridge_reach - 2 * clearance;
+    undercut_depth = delta_pass - settle_interference;
+    difference() {
+        translate([foot_x0, tab_y0, 0])
+            cube([foot_w, tab_yw, hook_height]);
+        translate([foot_x0 - 0.1, tab_y0 - 0.1, ridge_z0 - undercut_margin])
+            cube([undercut_depth + 0.1, tab_yw + 0.2, ridge_h + 2 * undercut_margin]);
+    }
 }
 
 module flex_clip() {
