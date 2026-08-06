@@ -39,9 +39,14 @@ ridge_reach = 0.9;
 ridge_z0 = 3.0;
 ridge_h = 1.0;
 // Spring-finger geometry (rail side): a cantilever fixed only at its base
-// (bonded to the solid grid floor below z = wall) and free over its full
-// height, thin in the X (lateral flex) direction, with a rounded root (see
-// root_fillet_h below) instead of a square corner.
+// (bonded, with real volumetric overlap -- see bond_eps above -- into the
+// solid grid floor below z = wall) and free over its full height, thin in
+// the X (lateral flex) direction, with an explicit finite-radius root fillet
+// (see root_fillet_r above) instead of a square corner or a hull taper to a
+// degenerate seam. Above the fillet band the section is uniform (finger_w);
+// within the fillet band it is locally wider/stiffer, so the finger's actual
+// worst-case strain is bounded above by treating the whole length as uniform
+// finger_w, which is what the calculation below does.
 //
 // The ridge is built as a hull() from z = ridge_z0 to ridge_z0 + ridge_h, so
 // its point of maximum X reach (ridge_reach) sits at the mid-height of that
@@ -50,17 +55,18 @@ ridge_h = 1.0;
 // eff_l = ridge_z0 + ridge_h / 2 = 3.0 + 0.5 = 3.5 mm -- not hook_height
 // (4.0 mm) as an earlier revision assumed.
 //
-// Clearing the ridge on insertion/removal needs a lateral displacement of
+// Clearing the ridge on insertion needs a lateral displacement of
 // delta_pass = ridge_reach - 2 * clearance = 0.9 - 2 * 0.35 = 0.20 mm. For a
 // cantilever of length eff_l = 3.5 mm and thickness finger_w = 1.0 mm
-// (bending direction), the worst-case insertion/removal fiber strain is
-// eps_pass = 3 * finger_w * delta_pass / (2 * eff_l^2)
-//          = 3 * 1.0 * 0.20 / (2 * 3.5^2) = 0.6 / 24.5 = 0.0245, i.e. ~2.45%,
-// under the 3% allowable-strain target for printed PLA/PETG flexures, with
-// margin held in reserve for the (unquantified by this beam formula) stress
-// concentration at the root -- mitigated separately by root_fillet_h below.
-// Insertion and removal are symmetric about the ridge's mid-height, so both
-// share this same 2.45% worst-case figure.
+// (bending direction), the worst-case insertion fiber strain is
+// eps_insert = 3 * finger_w * delta_pass / (2 * eff_l^2)
+//            = 3 * 1.0 * 0.20 / (2 * 3.5^2) = 0.6 / 24.5 = 0.0245, i.e.
+// ~2.45%, under the 3% allowable-strain target for printed PLA/PETG
+// flexures, with margin held in reserve for the (unquantified by this beam
+// formula) stress concentration at the root -- mitigated separately by the
+// finite-radius root_fillet_r above. Removal is symmetric about the ridge's
+// mid-height (same delta_pass, same eff_l), so eps_remove = eps_insert =
+// ~2.45%.
 //
 // In the settled (fully seated) position the tab's undercut (see
 // latch_tab()) relieves all but settle_interference = 0.05 mm of overlap, so
@@ -68,9 +74,33 @@ ridge_h = 1.0;
 // delta_pass:
 // eps_settled = 3 * finger_w * settle_interference / (2 * eff_l^2)
 //             = 3 * 1.0 * 0.05 / 24.5 = 0.0061, i.e. ~0.61%.
+//
+// All three load states (insertion 2.45%, removal 2.45%, settled 0.61%) stay
+// below the 3% allowable-strain target against the modeled section: eff_l
+// and finger_w above are unaffected by root_fillet_r (a local, sub-length
+// stiffening only) or by bond_eps (an extension into already-rigid material
+// below the fixed root), so this recalculation matches the actual bonded,
+// filleted geometry below.
 finger_w = 1.0;
 finger_gap = 0.5;
-root_fillet_h = 1.0;
+// Root fillet: an explicit, printable constant radius (not a hull taper to a
+// near-zero seam) blending the isolation slot's lower corner into the floor.
+// Above this band the slot is a constant finger_gap width, so the finger's
+// cross-section is uniform (= finger_w) everywhere the beam calculation
+// below actually applies; within the fillet band the section is locally
+// wider (stiffer) than finger_w, so treating the whole eff_l (measured from
+// z = wall, below) as uniform finger_w is a conservative over-estimate of
+// strain, not an under-estimate.
+root_fillet_r = 0.4;
+// Bonding epsilon: the spring finger must have real volumetric overlap with
+// the solid grid floor it's fixed to, and the ridge must have real
+// volumetric overlap with the finger it rides on -- not just a coincident
+// face at z = wall / x = face_x. OpenSCAD explicitly warns that unions of
+// exactly-touching faces can render non-manifold or as separate shells.
+// bond_eps sets how far each feature is extended into its parent solid; it
+// is well within finger_w (1.0 mm) and does not change any externally
+// visible dimension (hook_height, ridge_reach, eff_l, etc.).
+bond_eps = 0.6;
 // Tab-side undercut sizing (see latch_tab()): removes delta_pass minus the
 // small residual settle_interference retained for tactile retention, over
 // the ridge's own z-band (plus a manufacturing margin).
@@ -155,32 +185,50 @@ module latch_rail() {
     face_x = latch_tab_x0 - clearance;
     finger_x0 = face_x - finger_w;
     difference() {
-        translate([latch_rail_x0, latch_rail_y0, wall])
-            cube([latch_rail_x1 - latch_rail_x0, latch_rail_depth, hook_height]);
+        // The rail's base solid extends bond_eps below z = wall so it has
+        // real volumetric overlap with the grid floor slab rather than a
+        // coincident face; every cut below still stops at z = wall, so this
+        // extra depth stays solid and forms the finger's genuine fixed root.
+        translate([latch_rail_x0, latch_rail_y0, wall - bond_eps])
+            cube([latch_rail_x1 - latch_rail_x0, latch_rail_depth, hook_height + bond_eps]);
         translate([latch_tab_x0 - clearance, latch_rail_y0 - 0.1, wall - 0.1])
             cube([latch_tab_w + 2 * clearance, latch_rail_depth + 0.2, hook_height + 0.2]);
         // Isolation slot: frees the spring finger from the rest of the left
-        // stub across its full height so only its base (below z = wall)
-        // fixes it, matching the cantilever model used in the strain check.
-        // The slot is hulled from a near-zero-width seam at the very base up
-        // to its full finger_gap width over root_fillet_h, leaving a rounded
-        // (rather than square) root fillet on the finger -- reducing the
-        // stress concentration the flat beam formula above doesn't capture.
-        hull() {
-            translate([finger_x0 - finger_gap / 2, latch_rail_y0 - 0.1, wall - 0.1])
-                cube([0.001, latch_rail_depth + 0.2, 0.001]);
-            translate([finger_x0 - finger_gap, latch_rail_y0 - 0.1, wall + root_fillet_h])
-                cube([finger_gap, latch_rail_depth + 0.2, hook_height + 0.2 - root_fillet_h]);
+        // stub above z = wall, so only the bonded material below fixes it,
+        // matching the cantilever model used in the strain check. Above the
+        // root_fillet_r band the slot is a constant finger_gap width; within
+        // that band its lower corner is rounded with an explicit, printable
+        // radius (a quarter-cylinder cut from a corner box, not a hull
+        // taper to a near-zero seam), so the root blends smoothly into the
+        // floor with a finite radius and the section stays uniform
+        // (finger_w) everywhere the beam calculation above applies.
+        translate([finger_x0 - finger_gap, latch_rail_y0 - 0.1, wall + root_fillet_r])
+            cube([finger_gap, latch_rail_depth + 0.2, hook_height + 0.2 - root_fillet_r]);
+        translate([finger_x0 - finger_gap, latch_rail_y0 - 0.1, wall])
+            cube([finger_gap - root_fillet_r, latch_rail_depth + 0.2, root_fillet_r]);
+        intersection() {
+            translate([finger_x0 - root_fillet_r, latch_rail_y0 - 0.1, wall])
+                cube([root_fillet_r, latch_rail_depth + 0.2, root_fillet_r]);
+            translate([finger_x0 - root_fillet_r, latch_rail_y0 - 0.1, wall + root_fillet_r])
+                rotate([-90, 0, 0])
+                    cylinder(r = root_fillet_r, h = latch_rail_depth + 0.2, $fn = 32);
         }
     }
+    // The ridge's root cross-section is embedded bond_eps into the finger
+    // (rather than starting exactly at its face) so it has real volumetric
+    // overlap with the finger, not a coincident face at x = face_x. This
+    // only moves material backward into the finger's own solid interior
+    // (bond_eps = 0.6 mm is well within finger_w = 1.0 mm); ridge_reach,
+    // measured from face_x, and therefore eff_l and the strain calculation
+    // above are unaffected.
     translate([face_x, latch_rail_y0 + 0.2, wall])
         hull() {
-            translate([0, 0, ridge_z0])
-                cube([0.01, latch_rail_depth - 0.4, 0.01]);
+            translate([-bond_eps, 0, ridge_z0])
+                cube([0.01 + bond_eps, latch_rail_depth - 0.4, 0.01]);
             translate([ridge_reach, 0, ridge_z0 + ridge_h / 2])
                 cube([0.01, latch_rail_depth - 0.4, 0.01]);
-            translate([0, 0, ridge_z0 + ridge_h])
-                cube([0.01, latch_rail_depth - 0.4, 0.01]);
+            translate([-bond_eps, 0, ridge_z0 + ridge_h])
+                cube([0.01 + bond_eps, latch_rail_depth - 0.4, 0.01]);
         }
 }
 
