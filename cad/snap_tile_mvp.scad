@@ -12,6 +12,10 @@ wall = 4.0;
 rib = 1.5;
 hook_depth = 8.0;
 hook_height = 4.0;
+// Hook envelope height as printed: 1mm base offset + (hook_height - 1) body +
+// 1mm lip rise = hook_height + 1. Receiver clearance must be sized to this full
+// envelope, not just hook_height, or the lip collides with the roof.
+hook_env_h = hook_height + 1.0;
 clip_datum = 12.0;
 release_depth = 10.0;
 mount_z = wall;
@@ -27,6 +31,19 @@ latch_rail_x0 = rib + 10;
 latch_rail_x1 = pitch_w - rib - 10;
 latch_rail_y0 = clip_datum;
 latch_rail_depth = 3;
+// Flex-tab geometry: a rigid root bonds into the carrier floor, a reduced-width
+// neck provides the compliance, and a full-width foot presents an engaging face
+// to a rounded retention ridge on each rail stub.
+tab_root_h = 1.0;
+tab_neck_h = 1.5;
+tab_neck_w = 10;
+ridge_reach = 1.0;
+ridge_z0 = 3.0;
+ridge_h = 1.0;
+// Upper-receiver capturing geometry: a back wall and roof beyond the hook's
+// nominal footprint so the installed lip is captured, not just clearance-fit.
+receiver_back = 1.5;
+receiver_roof = 1.5;
 
 part = "grid"; // grid, carrier, flex_clip, spring_clip, coupon, panel
 
@@ -40,11 +57,23 @@ module rounded_box(size, radius = 1.5) {
 }
 
 module grid_section() {
+    // The inspection hole is cut in three bands rather than one, leaving solid
+    // full-width bridges under the latch rail and each upper-receiver housing so
+    // those features bond into the perimeter frame instead of floating over the
+    // open center.
+    band_bottom_y0 = latch_rail_y0 - 2;
+    band_bottom_y1 = latch_rail_y0 + latch_rail_depth + 2;
+    band_top_y0 = interface_y - 2;
+    band_top_y1 = interface_y + hook_depth + receiver_back + 2;
     difference() {
         cube([pitch_w, pitch_h, wall]);
         // Keep the center open so the wall surface can be inspected and dried.
         translate([rib, rib, -0.1])
-            cube([pitch_w - 2 * rib, pitch_h - 2 * rib, wall + 0.2]);
+            cube([pitch_w - 2 * rib, band_bottom_y0 - rib, wall + 0.2]);
+        translate([rib, band_bottom_y1, -0.1])
+            cube([pitch_w - 2 * rib, band_top_y0 - band_bottom_y1, wall + 0.2]);
+        translate([rib, band_top_y1, -0.1])
+            cube([pitch_w - 2 * rib, pitch_h - rib - band_top_y1, wall + 0.2]);
         // Top edge receives the matching key from the section above.
             translate([pitch_w / 2 - 3 - registration_clearance,
                        pitch_h - 2 - registration_clearance, -0.1])
@@ -59,14 +88,7 @@ module grid_section() {
     // Upper hook receptacles and lower latch rails.
     for (x = [rib + 16, pitch_w - rib - 16])
         upper_receiver(x);
-    difference() {
-        translate([latch_rail_x0, latch_rail_y0, wall])
-            cube([latch_rail_x1 - latch_rail_x0, latch_rail_depth, hook_height]);
-        // Clears the carrier's flexing latch tab (plus clearance on every side) so
-        // the rigid rail can never touch the tab once the carrier is seated.
-        translate([latch_tab_x0 - clearance, latch_rail_y0 - 0.1, wall - 0.1])
-            cube([latch_tab_w + 2 * clearance, latch_rail_depth + 0.2, hook_height + 0.2]);
-    }
+    latch_rail();
     // Bottom key mates with the receiving slot in the next section.
     translate([pitch_w / 2 - 3 + registration_clearance,
                -2 + registration_clearance, 0])
@@ -74,20 +96,51 @@ module grid_section() {
               4 - 2 * registration_clearance, wall]);
 }
 
+module latch_rail() {
+    // Two rail stubs flank the flex-tab notch; each carries a rounded retention
+    // ridge (tapered top and bottom via hull()) that intrudes into the notch over
+    // a limited z-band. The carrier's tab must flex sideways to pass it, then
+    // springs back to engage it, giving real retention instead of pure clearance.
+    difference() {
+        translate([latch_rail_x0, latch_rail_y0, wall])
+            cube([latch_rail_x1 - latch_rail_x0, latch_rail_depth, hook_height]);
+        translate([latch_tab_x0 - clearance, latch_rail_y0 - 0.1, wall - 0.1])
+            cube([latch_tab_w + 2 * clearance, latch_rail_depth + 0.2, hook_height + 0.2]);
+    }
+    for (side = [0, 1]) {
+        face_x = side == 0 ? latch_tab_x0 - clearance : latch_tab_x0 + latch_tab_w + clearance;
+        dir = side == 0 ? 1 : -1;
+        translate([face_x, latch_rail_y0 + 0.2, wall])
+            hull() {
+                translate([0, 0, ridge_z0])
+                    cube([0.01, latch_rail_depth - 0.4, 0.01]);
+                translate([dir * ridge_reach, 0, ridge_z0 + ridge_h / 2])
+                    cube([0.01, latch_rail_depth - 0.4, 0.01]);
+                translate([0, 0, ridge_z0 + ridge_h])
+                    cube([0.01, latch_rail_depth - 0.4, 0.01]);
+            }
+    }
+}
+
 module upper_receiver(x) {
     // Side walls flank the mating slot; the hook (see upper_hook) is inset by
-    // `clearance` from this same nominal footprint on X, Y, and Z, so sizing the
-    // cavity to the full nominal footprint gives real clearance on every axis
-    // instead of coincidentally matching the hook's bounds.
+    // `clearance` from this same nominal footprint on X and Z. The housing also
+    // extends past the hook's nominal depth (Y) and height (Z) to leave a solid
+    // back wall and roof: capturing geometry so the installed lip cannot pull
+    // straight out along Y or Z. The front (toward the carrier body) stays open
+    // so the hook keeps a solid root bridging into the carrier shell.
     housing_wall = 1.5;
     difference() {
         translate([x - hook_depth / 2 - housing_wall, interface_y, wall])
-            cube([hook_depth + 2 * housing_wall, hook_depth, hook_height]);
-        // Cavity: the hook's full nominal footprint, left open top and bottom so
-        // the lead-in lip has clear travel and never bottoms out on a floor or
-        // back wall.
-        translate([x - hook_depth / 2, interface_y, wall - 0.1])
-            cube([hook_depth, hook_depth, hook_height + 3]);
+            cube([hook_depth + 2 * housing_wall,
+                  hook_depth + receiver_back,
+                  hook_env_h + receiver_roof]);
+        // Cavity: the hook's nominal footprint plus installation clearance on X
+        // and Z (sized to the hook's full envelope height, including its lip
+        // rise) and an open front face, stopping short of the back wall and roof
+        // so both remain solid and capture the hook's lip once installed.
+        translate([x - hook_depth / 2 - clearance, interface_y - 0.1, wall - 0.1])
+            cube([hook_depth + 2 * clearance, hook_depth + clearance, hook_env_h + clearance]);
     }
 }
 
@@ -122,37 +175,77 @@ module carrier_shell() {
 
 module carrier() {
     housing_wall = 1.5;
+    // Rail-stub X ranges (left/right of the flex-tab notch); relief only clears
+    // these, never the notch itself, so the tab's own footprint stays solid and
+    // bonds into the carrier floor instead of floating in an oversized channel.
+    stub1_x0 = latch_rail_x0;
+    stub1_x1 = latch_tab_x0 - clearance;
+    stub2_x0 = latch_tab_x0 + latch_tab_w + clearance;
+    stub2_x1 = latch_rail_x1;
     translate([rib, rib, mount_z]) {
         difference() {
             carrier_shell();
-            // Relief channel over the full latch-rail footprint (plus clearance)
-            // so the carrier's flat floor never touches the rigid rail stubs on
-            // either side of the flex tab added below.
-            translate([latch_rail_x0 - rib - clearance,
-                       latch_rail_y0 - rib - clearance,
-                       -0.1])
-                cube([latch_rail_x1 - latch_rail_x0 + 2 * clearance,
+            // Relief for each rigid rail stub (plus clearance) so the carrier's
+            // flat floor never touches them; the notch/tab region between the
+            // stubs is left untouched.
+            translate([stub1_x0 - rib - clearance, latch_rail_y0 - rib - clearance, -0.1])
+                cube([stub1_x1 - stub1_x0 + 2 * clearance,
                       latch_rail_depth + 2 * clearance,
                       hook_height + clearance + 0.1]);
-            // Relief pockets over each upper-receiver housing (plus clearance) so
-            // the carrier's flat floor never touches the housing walls that
-            // surround the hooks added below.
+            translate([stub2_x0 - rib - clearance, latch_rail_y0 - rib - clearance, -0.1])
+                cube([stub2_x1 - stub2_x0 + 2 * clearance,
+                      latch_rail_depth + 2 * clearance,
+                      hook_height + clearance + 0.1]);
+            // Relief frame (C-shaped, open on the near/front side) around each
+            // receiver housing: clears the housing's side walls, back wall, and
+            // roof (plus clearance), but leaves the hook's own footprint solid and
+            // leaves the front (toward the carrier's body) completely unrelieved
+            // so the floor forms a continuous bridge from the shell into the
+            // hook's root -- the ring never fully encircles the hook footprint,
+            // so it can't isolate it from the rest of the shell.
             for (x = [rib + 16, pitch_w - rib - 16])
-                translate([x - hook_depth / 2 - housing_wall - clearance - rib,
-                           interface_y - clearance - rib,
-                           -0.1])
-                    cube([hook_depth + 2 * housing_wall + 2 * clearance,
-                          hook_depth + 2 * clearance,
-                          hook_height + clearance + 0.1]);
+                difference() {
+                    translate([x - hook_depth / 2 - housing_wall - clearance - rib,
+                               interface_y - rib,
+                               -0.1])
+                        cube([hook_depth + 2 * housing_wall + 2 * clearance,
+                              hook_depth + receiver_back + clearance,
+                              hook_env_h + receiver_roof + clearance + 0.1]);
+                    translate([x - hook_depth / 2 - rib - 0.05,
+                               interface_y - rib - 0.05,
+                               -0.2])
+                        cube([hook_depth + 0.1,
+                              hook_depth + 0.1,
+                              hook_env_h + receiver_roof + clearance + 0.6]);
+                }
         }
+        // Each hook's own footprint was left untouched by the relief frame above,
+        // so it remains solid, continuous carrier-floor material: a bonded root
+        // for the hook rather than a disconnected block floating in a pocket.
         upper_hook(hook_local_x_left);
         upper_hook(hook_local_x_right);
-        // Flexing latch tab: sized clearance-smaller than the rail notch on X and
-        // Y so it seats inside the gap between the rail stubs without touching
-        // the rigid rail (see grid_section's latch-rail difference()).
-        translate([latch_tab_x0 + clearance - rib, latch_rail_y0 + clearance - rib, 0])
-            cube([latch_tab_w - 2 * clearance, latch_rail_depth - 2 * clearance, hook_height]);
+        latch_tab();
     }
+}
+
+module latch_tab() {
+    // Root: solid, full nominal width, bonded directly into the carrier's floor
+    // (see carrier_shell -- floor spans z 0..2) so the tab is a continuous solid
+    // with the shell instead of a disconnected block in the relief channel.
+    translate([latch_tab_x0 + clearance - rib, latch_rail_y0 + clearance - rib, 0])
+        cube([latch_tab_w - 2 * clearance, latch_rail_depth - 2 * clearance, tab_root_h]);
+    // Neck: reduced-width compliant beam giving the foot room to flex sideways
+    // past each rail's retention ridge on insertion and removal.
+    translate([latch_tab_x0 + (latch_tab_w - tab_neck_w) / 2 - rib,
+               latch_rail_y0 + clearance - rib, tab_root_h])
+        cube([tab_neck_w, latch_rail_depth - 2 * clearance, tab_neck_h]);
+    // Foot: back to the tab's full nominal width so it presents an engaging face
+    // to the rail's retention ridge (see latch_rail()); it intentionally overlaps
+    // the ridge band by design, requiring the neck above to flex during seating.
+    translate([latch_tab_x0 + clearance - rib, latch_rail_y0 + clearance - rib,
+               tab_root_h + tab_neck_h])
+        cube([latch_tab_w - 2 * clearance, latch_rail_depth - 2 * clearance,
+              hook_height - tab_root_h - tab_neck_h]);
 }
 
 module flex_clip() {
