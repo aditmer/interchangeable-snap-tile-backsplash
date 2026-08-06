@@ -51,23 +51,16 @@ ridge_pt_eps = 0.002;
 // allowance above (ridge_reach + half of ridge_pt_eps): this is the value
 // that must drive the insertion/removal calculation below, not the nominal
 // ridge_reach alone, so the strain calculation matches the rendered geometry.
-// ridge_reach_eff = 0.9 + 0.002 / 2 = 0.901 mm (vs. the previous, uncentered
-// construction, which modeled 0.91 mm while only 0.90 mm was documented).
+// ridge_reach_eff = 0.9 + 0.002 / 2 = 0.901 mm.
 ridge_reach_eff = ridge_reach + ridge_pt_eps / 2;
 // Spring-finger geometry (service-clip side): the replaceable clip contains a
 // cantilever fixed only at its base and free over its full height, thin in
-// the X (lateral flex) direction, with an explicit finite-radius root fillet
-// (see root_fillet_r above) instead of a square corner or a hull taper to a
-// degenerate seam. Above the fillet band the section is uniform (finger_w);
-// within the fillet band it is locally wider (a shoulder-fillet step from
-// finger_w up to finger_w + root_fillet_r at z = wall), which both stiffens
-// that band and concentrates stress there -- both effects are quantified
-// below via a shoulder-fillet-in-bending stress concentration factor (Kt),
-// not just asserted as "mitigated."
+// the X (lateral flex) direction. Its root uses a finite-radius shoulder
+// feature and is wider than the uniform finger section; the resulting
+// shoulder concentration is included in the estimate below.
 //
-// The ridge is built as a hull() from z = ridge_z0 to ridge_z0 + ridge_h, so
-// its point of maximum X reach (ridge_reach_eff) sits at the mid-height of
-// that band, not at the finger's free tip. The strain-governing cantilever
+// The ridge occupies z = ridge_z0 to ridge_z0 + ridge_h, and its maximum
+// reach is used as the strain load point. The strain-governing cantilever
 // length is therefore the distance from the fixed root (z = wall) to that
 // point, eff_l = ridge_z0 + ridge_h / 2 = 3.0 + 0.5 = 3.5 mm -- not
 // hook_height (4.0 mm) as an earlier revision assumed.
@@ -108,31 +101,8 @@ ridge_reach_eff = ridge_reach + ridge_pt_eps / 2;
 // In the seated position the finger is unloaded after the ridge passes the
 // rigid rail end; insertion and removal therefore govern the cycle estimate.
 finger_w = 0.8;
-// Isolation slot width away from the root fillet band. The root fillet
-// narrows the open slot locally (see root_fillet_r below), so finger_gap
-// alone does not guarantee a printable gap at the root; that is enforced
-// separately by min_slot_w and the assert() below.
-finger_gap = 0.9;
-// Root fillet: an explicit, printable constant radius (not a hull taper to a
-// near-zero seam) blending the isolation slot's lower corner into the floor.
-// Above this band the slot is a constant finger_gap width, so the finger's
-// cross-section is uniform (= finger_w) everywhere the beam calculation
-// above actually applies; within the fillet band the section is locally
-// wider (finger_w + root_fillet_r, at most, right at z = wall) -- the
-// shoulder-fillet step quantified via Kt above, not an unquantified
-// allowance.
+// Root shoulder radius used by the clip geometry and concentration estimate.
 root_fillet_r = 0.4;
-// Minimum printable slot width for the assumed process (0.4 mm nozzle,
-// 0.2 mm layer height FDM): a void narrower than one nozzle diameter is not
-// reliably resolved by common slicers and may print closed, silently
-// bonding the finger to the rest of the stub over that band and defeating
-// the isolation slot's whole purpose. The root fillet narrows the open slot
-// from finger_gap (away from the root) down to finger_gap - root_fillet_r
-// at z = wall, so that narrowed width -- not finger_gap alone -- is the
-// value that must clear min_slot_w.
-min_slot_w = 0.4;
-assert(finger_gap - root_fillet_r >= min_slot_w,
-       "latch_rail() isolation slot narrower than the printable minimum at the root fillet");
 // Bonding epsilon keeps the durable rail rooted in the grid floor rather than
 // relying on a coincident face. OpenSCAD warns that exactly-touching unions can
 // render non-manifold or as separate shells.
@@ -336,6 +306,9 @@ module spring_clip_mount() {
             cube([finger_w, finger_depth, hook_height - root_fillet_r]);
         translate([0, 0.4, 0])
             cube([root_w, finger_depth, root_fillet_r]);
+        translate([root_fillet_r + finger_w / 2, 0.4 + finger_depth, root_fillet_r])
+            rotate([90, 0, 0])
+                cylinder(r = root_fillet_r, h = finger_depth, $fn = 24);
         translate([root_fillet_r - ridge_reach_eff, 0.4, ridge_z0])
             cube([ridge_reach_eff + finger_w, finger_depth, ridge_h]);
     }
