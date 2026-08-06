@@ -32,9 +32,8 @@ latch_rail_x1 = pitch_w - rib - 10;
 latch_rail_y0 = clip_datum;
 latch_rail_depth = 3;
 // Latch geometry: the tab is a single rigid, full-height block bonded directly
-// into the carrier floor (durable, load-carrying, replaceable per-tile part);
-// the compliance instead lives in a spring finger on the rail (see
-// latch_rail()), which is the permanent, installed-once part.
+// into the carrier floor (durable, load-carrying, replaceable per-tile part).
+// Compliance and retention live in the separately replaceable spring_clip.
 ridge_reach = 0.9;
 ridge_z0 = 3.0;
 ridge_h = 1.0;
@@ -55,9 +54,8 @@ ridge_pt_eps = 0.002;
 // ridge_reach_eff = 0.9 + 0.002 / 2 = 0.901 mm (vs. the previous, uncentered
 // construction, which modeled 0.91 mm while only 0.90 mm was documented).
 ridge_reach_eff = ridge_reach + ridge_pt_eps / 2;
-// Spring-finger geometry (rail side): a cantilever fixed only at its base
-// (bonded, with real volumetric overlap -- see bond_eps above -- into the
-// solid grid floor below z = wall) and free over its full height, thin in
+// Spring-finger geometry (service-clip side): the replaceable clip contains a
+// cantilever fixed only at its base and free over its full height, thin in
 // the X (lateral flex) direction, with an explicit finite-radius root fillet
 // (see root_fillet_r above) instead of a square corner or a hull taper to a
 // degenerate seam. Above the fillet band the section is uniform (finger_w);
@@ -145,11 +143,9 @@ root_fillet_r = 0.4;
 min_slot_w = 0.4;
 assert(finger_gap - root_fillet_r >= min_slot_w,
        "latch_rail() isolation slot narrower than the printable minimum at the root fillet");
-// Bonding epsilon: the spring finger must have real volumetric overlap with
-// the solid grid floor it's fixed to, and the ridge must have real
-// volumetric overlap with the finger it rides on -- not just a coincident
-// face at z = wall / x = face_x. OpenSCAD explicitly warns that unions of
-// exactly-touching faces can render non-manifold or as separate shells.
+// Bonding epsilon keeps the durable rail rooted in the grid floor rather than
+// relying on a coincident face. OpenSCAD warns that exactly-touching unions can
+// render non-manifold or as separate shells.
 // bond_eps sets how far each feature is extended into its parent solid; it
 // is well within finger_w (0.8 mm) and does not change any externally
 // visible dimension (hook_height, ridge_reach, eff_l, etc.).
@@ -164,7 +160,7 @@ undercut_margin = 0.2;
 receiver_back = 1.5;
 receiver_roof = 1.5;
 
-part = "grid"; // grid, carrier, flex_clip, spring_clip, coupon, panel
+part = "grid"; // grid, carrier, flex_clip, spring_clip, coupon, hook_coupon, latch_coupon, registration_coupon, panel
 
 module rounded_box(size, radius = 1.5) {
     translate([radius, radius, radius]) {
@@ -216,79 +212,14 @@ module grid_section() {
 }
 
 module latch_rail() {
-    // Two rail stubs flank the (now rigid) tab notch, but only one carries a
-    // rounded retention ridge (tapered top and bottom via hull()) that
-    // intrudes into the notch over a limited z-band; the other stub presents
-    // a plain, clearance-only face. Only the left stub carries a retention
-    // ridge. With ridges on both sides, the throat between them (18.7 mm) was
-    // narrower than the rigid foot (19.3 mm), so no lateral shift could clear
-    // both at once. A single ridge lets clearance be taken up entirely toward
-    // the open (ridge-free) side.
-    //
-    // The ridge itself sits on a compliant spring finger, not on the rigid
-    // stub body: a cantilever (see finger_w/finger_gap above), isolated from
-    // the rest of the stub by a thin slot over its whole height and fixed
-    // only where its base bonds into the solid grid floor below z = wall.
-    // The strain-governing length is eff_l = ridge_z0 + ridge_h / 2 = 3.5 mm
-    // (the height of the ridge's point of maximum reach, not the finger's
-    // free tip -- see the calculation above finger_w). The finger deflects
-    // out of the way on insertion/removal within that documented strain
-    // target and, thanks to the tab-side undercut (see latch_tab()), is left
-    // only lightly loaded rather than held open once settled.
-    face_x = latch_tab_x0 - clearance;
-    finger_x0 = face_x - finger_w;
+    // The grid supplies only durable mating geometry. Compliance and the
+    // retention ridge live in the replaceable spring_clip.
     difference() {
-        // The rail's base solid extends bond_eps below z = wall so it has
-        // real volumetric overlap with the grid floor slab rather than a
-        // coincident face; every cut below still stops at z = wall, so this
-        // extra depth stays solid and forms the finger's genuine fixed root.
         translate([latch_rail_x0, latch_rail_y0, wall - bond_eps])
             cube([latch_rail_x1 - latch_rail_x0, latch_rail_depth, hook_height + bond_eps]);
         translate([latch_tab_x0 - clearance, latch_rail_y0 - 0.1, wall - 0.1])
             cube([latch_tab_w + 2 * clearance, latch_rail_depth + 0.2, hook_height + 0.2]);
-        // Isolation slot: frees the spring finger from the rest of the left
-        // stub above z = wall, so only the bonded material below fixes it,
-        // matching the cantilever model used in the strain check. Above the
-        // root_fillet_r band the slot is a constant finger_gap width; within
-        // that band its lower corner is rounded with an explicit, printable
-        // radius (a quarter-cylinder cut from a corner box, not a hull
-        // taper to a near-zero seam), so the root blends smoothly into the
-        // floor with a finite radius and the section stays uniform
-        // (finger_w) everywhere the beam calculation above applies.
-        translate([finger_x0 - finger_gap, latch_rail_y0 - 0.1, wall + root_fillet_r])
-            cube([finger_gap, latch_rail_depth + 0.2, hook_height + 0.2 - root_fillet_r]);
-        translate([finger_x0 - finger_gap, latch_rail_y0 - 0.1, wall])
-            cube([finger_gap - root_fillet_r, latch_rail_depth + 0.2, root_fillet_r]);
-        intersection() {
-            translate([finger_x0 - root_fillet_r, latch_rail_y0 - 0.1, wall])
-                cube([root_fillet_r, latch_rail_depth + 0.2, root_fillet_r]);
-            translate([finger_x0 - root_fillet_r, latch_rail_y0 - 0.1, wall + root_fillet_r])
-                rotate([-90, 0, 0])
-                    cylinder(r = root_fillet_r, h = latch_rail_depth + 0.2, $fn = 32);
-        }
     }
-    // The ridge's root cross-section is embedded bond_eps into the finger
-    // (rather than starting exactly at its face) so it has real volumetric
-    // overlap with the finger, not a coincident face at x = face_x. This
-    // only moves material backward into the finger's own solid interior
-    // (bond_eps = 0.6 mm is well within finger_w = 0.8 mm); ridge_reach,
-    // measured from face_x, and therefore eff_l and the strain calculation
-    // above are unaffected.
-    //
-    // The tip primitive is centered on x = ridge_reach (translated back by
-    // ridge_pt_eps / 2) rather than starting at ridge_reach and extending
-    // outward, so it contributes only ridge_pt_eps / 2 to the modeled max
-    // reach -- ridge_reach_eff above already includes that contribution, so
-    // the modeled geometry and the documented/calculated reach agree.
-    translate([face_x, latch_rail_y0 + 0.2, wall])
-        hull() {
-            translate([-bond_eps, 0, ridge_z0])
-                cube([0.01 + bond_eps, latch_rail_depth - 0.4, 0.01]);
-            translate([ridge_reach - ridge_pt_eps / 2, 0, ridge_z0 + ridge_h / 2])
-                cube([ridge_pt_eps, latch_rail_depth - 0.4, ridge_pt_eps]);
-            translate([-bond_eps, 0, ridge_z0 + ridge_h])
-                cube([0.01 + bond_eps, latch_rail_depth - 0.4, 0.01]);
-        }
 }
 
 module upper_receiver(x) {
@@ -346,8 +277,7 @@ module carrier() {
     housing_wall = 1.5;
     // Rail-stub X ranges (left/right of the tab notch); the stub reliefs
     // below clear only these ranges. The tab itself is rigid and stays fully
-    // bonded to the carrier floor (compliance lives in the rail's spring
-    // finger instead -- see latch_rail()), so no separate notch relief is cut.
+    // bonded to the carrier floor; the service clip supplies compliance.
     stub1_x0 = latch_rail_x0;
     stub1_x1 = latch_tab_x0 - clearance;
     stub2_x0 = latch_tab_x0 + latch_tab_w + clearance;
@@ -357,8 +287,7 @@ module carrier() {
             carrier_shell();
             // Relief for each rigid rail stub (plus clearance) so the carrier's
             // flat floor never touches them; the tab region between the stubs
-            // stays unrelieved so it bonds fully into the carrier floor (it is
-            // rigid -- no neck to free for flexing).
+            // stays unrelieved and bonds fully into the carrier floor.
             translate([stub1_x0 - rib - clearance, latch_rail_y0 - rib - clearance, -0.1])
                 cube([stub1_x1 - stub1_x0 + 2 * clearance,
                       latch_rail_depth + 2 * clearance,
@@ -390,9 +319,7 @@ module carrier() {
                               hook_env_h + receiver_roof + clearance + 0.6]);
                 }
         }
-        // Each hook's own footprint was left untouched by the relief frame above,
-        // so it remains solid, continuous carrier-floor material: a bonded root
-        // for the hook rather than a disconnected block floating in a pocket.
+        // Each hook's own footprint remains solid and continuous with the carrier.
         upper_hook(hook_local_x_left);
         upper_hook(hook_local_x_right);
         latch_tab();
@@ -401,10 +328,8 @@ module carrier() {
 
 module latch_tab() {
     // Rigid engaging tab: a single solid, full-height, full-nominal-width
-    // block bonded directly into the carrier's floor. The compliance needed
-    // to clear the rail's retention ridge lives in the rail's spring finger
-    // (see latch_rail()), so the tab itself carries load through durable,
-    // unflexed geometry rather than acting as its own flexure.
+    // block bonded directly into the carrier's floor. The replaceable clip
+    // supplies the compliance needed to clear the durable grid rail.
     foot_x0 = latch_tab_x0 + clearance - rib;
     foot_w = latch_tab_w - 2 * clearance;
     tab_y0 = latch_rail_y0 + clearance - rib;
@@ -442,13 +367,16 @@ module flex_clip() {
 }
 
 module spring_clip() {
-    // Replaceable service clip with a positive rail and finger release.
+    // Replaceable service clip: the rail remains rigid while this finger
+    // supplies the compliant retention and carries the single ridge.
     difference() {
         rounded_box([24, 18, 4], 1.5);
         translate([4, 4, -0.1]) cube([16, 10, 4.2]);
+        translate([8, 0, 2.5]) cube([finger_gap, 18, 2]);
     }
-    translate([9, 12, 4]) cube([6, 7, 4]);
-    translate([7, 16, 4]) cube([10, 3, 3]);
+    translate([9, 12, 4]) cube([6, 7, 2]);
+    translate([9 + ridge_reach_eff, 12.4, 4 + ridge_z0 - 1])
+        cube([0.8, latch_rail_depth - 0.8, ridge_h]);
 }
 
 module coupon() {
@@ -462,6 +390,43 @@ module coupon() {
             translate([4, 8 + c, 4]) cube([20, 4, 4]);
             translate([4, 18, 4]) cube([20, 4, 4]);
             translate([4, 22 + c, 4]) cube([20, 4, 4]);
+        }
+
+    }
+}
+
+module hook_coupon() {
+    for (i = [0:2]) {
+        c = 0.20 + i * 0.15;
+        translate([i * 32, 0, 0]) {
+            cube([28, 20, 4]);
+            translate([4, 4, 4]) cube([20, 4, 4]);
+            translate([4, 8 + c, 4]) cube([20, 4, 4]);
+        }
+    }
+}
+
+module latch_coupon() {
+    for (i = [0:2]) {
+        c = 0.20 + i * 0.15;
+        translate([i * 32, 0, 0]) {
+            cube([28, 20, 4]);
+            translate([4, 4, 4]) cube([20, 3, 4]);
+            translate([4, 7 + c, 4]) cube([20, 3, 4]);
+            translate([12, 10, 4]) cube([4, 4, 1]);
+        }
+    }
+}
+
+module registration_coupon() {
+    for (i = [0:2]) {
+        c = 0.20 + i * 0.15;
+        translate([i * 32, 0, 0]) {
+            cube([28, 14, wall]);
+            translate([5, 4, 0])
+                cube([6 - 2 * c, 4 - 2 * c, wall]);
+            translate([17, 4, 0])
+                cube([6 + 2 * c, 4 + 2 * c, wall]);
         }
     }
 }
@@ -478,4 +443,7 @@ if (part == "carrier") carrier();
 if (part == "flex_clip") flex_clip();
 if (part == "spring_clip") spring_clip();
 if (part == "coupon") coupon();
+if (part == "hook_coupon") hook_coupon();
+if (part == "latch_coupon") latch_coupon();
+if (part == "registration_coupon") registration_coupon();
 if (part == "panel") panel();

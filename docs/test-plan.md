@@ -22,9 +22,10 @@ photos, failure mode, and decision. A blank template is provided at
 
 Export `part = "coupon"` from `cad/snap_tile_mvp.scad`. Print the 0.20, 0.35, and
 0.50 mm clearance variants without changing orientation. Measure the paired clearance
-bars and printed-versus-nominal dimensions as a dimensional screen. Use separate
-interface coupons for hook/latch deflection and registration key/slot fit, then confirm
-final engagement on the assembled carrier/grid parts before selecting a revision.
+bars and printed-versus-nominal dimensions as a dimensional screen. Also export
+`hook_coupon`, `latch_coupon`, and `registration_coupon` to measure hook/receiver,
+latch/clip, and registration key/slot fit, then confirm final engagement on the
+assembled carrier/grid parts before selecting a revision.
 Recommend a tolerance window only after all three variants have been inspected.
 
 ### Panel and usability (issues #6–#7)

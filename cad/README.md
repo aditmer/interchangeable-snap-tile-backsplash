@@ -10,6 +10,9 @@ millimetres and exports one part through the `part` selector:
 | `flex_clip` | Integral-flexure comparison concept |
 | `spring_clip` | Replaceable clip concept |
 | `coupon` | Three clearance variants: 0.20, 0.35, 0.50 mm |
+| `hook_coupon` | Upper hook/receiver clearance variants |
+| `latch_coupon` | Lower latch/clip clearance variants |
+| `registration_coupon` | Section registration key/slot variants |
 | `panel` | Nine grid sections for layout review |
 
 Example export:
