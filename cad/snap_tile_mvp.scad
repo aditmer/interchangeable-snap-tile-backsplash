@@ -49,8 +49,8 @@ ridge_h = 1.0;
 ridge_pt_eps = 0.002;
 // Modeled maximum X reach of the ridge, including the construction
 // allowance above (ridge_reach + half of ridge_pt_eps): this is the value
-// that must drive delta_pass below, not the nominal ridge_reach alone, so
-// the strain and undercut calculations match the actual rendered geometry.
+// that must drive the insertion/removal calculation below, not the nominal
+// ridge_reach alone, so the strain calculation matches the rendered geometry.
 // ridge_reach_eff = 0.9 + 0.002 / 2 = 0.901 mm (vs. the previous, uncentered
 // construction, which modeled 0.91 mm while only 0.90 mm was documented).
 ridge_reach_eff = ridge_reach + ridge_pt_eps / 2;
@@ -105,18 +105,8 @@ ridge_reach_eff = ridge_reach + ridge_pt_eps / 2;
 // Removal is symmetric about the ridge's mid-height (same delta_pass, same
 // eff_l), so eps_remove = eps_insert = ~2.49%.
 //
-// In the settled (fully seated) position the tab's undercut (see
-// latch_tab()) relieves all but settle_interference = 0.05 mm of overlap, so
-// the finger is left only lightly loaded rather than held open at the full
-// delta_pass:
-// eps_settled_nom = 3 * finger_w * settle_interference / (2 * eff_l^2)
-//                 = 3 * 0.8 * 0.05 / 24.5 = 0.0049, i.e. ~0.49% nominal;
-// eps_settled = Kt * eps_settled_nom = 1.267 * 0.0049 = 0.0062, i.e. ~0.62%.
-//
-// All three load states -- insertion ~2.49%, removal ~2.49%, settled ~0.62%
-// -- stay below the 3% allowable-strain target against the actual filleted,
-// bonded root section (Kt applied), not just the nominal uniform-section
-// beam estimate.
+// In the seated position the finger is unloaded after the ridge passes the
+// rigid rail end; insertion and removal therefore govern the cycle estimate.
 finger_w = 0.8;
 // Isolation slot width away from the root fillet band. The root fillet
 // narrows the open slot locally (see root_fillet_r below), so finger_gap
@@ -150,11 +140,6 @@ assert(finger_gap - root_fillet_r >= min_slot_w,
 // is well within finger_w (0.8 mm) and does not change any externally
 // visible dimension (hook_height, ridge_reach, eff_l, etc.).
 bond_eps = 0.6;
-// Tab-side undercut sizing (see latch_tab()): removes delta_pass minus the
-// small residual settle_interference retained for tactile retention, over
-// the ridge's own z-band (plus a manufacturing margin).
-settle_interference = 0.05;
-undercut_margin = 0.2;
 // Upper-receiver capturing geometry: a back wall and roof beyond the hook's
 // nominal footprint so the installed lip is captured, not just clearance-fit.
 receiver_back = 1.5;
@@ -187,8 +172,6 @@ module grid_section() {
             cube([pitch_w - 2 * rib, band_bottom_y0 - rib, wall + 0.2]);
         translate([rib, band_bottom_y1, -0.1])
             cube([pitch_w - 2 * rib, band_top_y0 - band_bottom_y1, wall + 0.2]);
-        translate([rib, band_top_y1, -0.1])
-            cube([pitch_w - 2 * rib, pitch_h - rib - band_top_y1, wall + 0.2]);
         // Top edge receives the matching key from the section above.
             translate([pitch_w / 2 - 3 - registration_clearance,
                        pitch_h - 2 - registration_clearance, -0.1])
@@ -275,6 +258,8 @@ module carrier_shell() {
 
 module carrier() {
     housing_wall = 1.5;
+    clip_x0 = latch_tab_x0 - clearance - rib - 1.5;
+    clip_y0 = latch_rail_y0 + clearance - rib;
     // Rail-stub X ranges (left/right of the tab notch); the stub reliefs
     // below clear only these ranges. The tab itself is rigid and stays fully
     // bonded to the carrier floor; the service clip supplies compliance.
@@ -318,42 +303,16 @@ module carrier() {
                               hook_depth + 0.1,
                               hook_env_h + receiver_roof + clearance + 0.6]);
                 }
+            // Service-clip pocket: the base is retained in the carrier floor
+            // while the finger remains replaceable from the lower edge.
+            translate([clip_x0 - 0.2, clip_y0 - 0.2, 1.4])
+                cube([2.4, latch_rail_depth + 0.4, 1.0]);
         }
         // Each hook's own footprint remains solid and continuous with the carrier.
         upper_hook(hook_local_x_left);
         upper_hook(hook_local_x_right);
-        latch_tab();
-    }
-}
-
-module latch_tab() {
-    // Rigid engaging tab: a single solid, full-height, full-nominal-width
-    // block bonded directly into the carrier's floor. The replaceable clip
-    // supplies the compliance needed to clear the durable grid rail.
-    foot_x0 = latch_tab_x0 + clearance - rib;
-    foot_w = latch_tab_w - 2 * clearance;
-    tab_y0 = latch_rail_y0 + clearance - rib;
-    tab_yw = latch_rail_depth - 2 * clearance;
-    // Settled-position undercut: because the tab's z-span exactly covers the
-    // notch height, a plain rigid block would keep the ridge's whole z-band
-    // permanently occupied once seated, so the finger could never relax
-    // (the flaw the previous round left unfixed). This recess, cut into the
-    // tab's ridge-facing shoulder over the ridge's own z-band (plus
-    // undercut_margin), leaves only settle_interference of residual overlap
-    // in the settled position, letting the finger spring back close to
-    // neutral instead of staying held open. undercut_depth removes the rest
-    // of the insertion/removal interference (delta_pass, see the calculation
-    // above finger_w). Uses ridge_reach_eff (the modeled max reach,
-    // including the ridge tip's construction allowance) so the undercut
-    // clears the ridge as actually rendered, not just its nominal
-    // ridge_reach.
-    delta_pass = ridge_reach_eff - 2 * clearance;
-    undercut_depth = delta_pass - settle_interference;
-    difference() {
-        translate([foot_x0, tab_y0, 0])
-            cube([foot_w, tab_yw, hook_height]);
-        translate([foot_x0 - 0.1, tab_y0 - 0.1, ridge_z0 - undercut_margin])
-            cube([undercut_depth + 0.1, tab_yw + 0.2, ridge_h + 2 * undercut_margin]);
+        translate([clip_x0, clip_y0, 1.4])
+            spring_clip_mount();
     }
 }
 
@@ -366,17 +325,25 @@ module flex_clip() {
     translate([8, 12, 4]) cube([4, 6, 5]);
 }
 
-module spring_clip() {
-    // Replaceable service clip: the rail remains rigid while this finger
-    // supplies the compliant retention and carries the single ridge.
-    difference() {
-        rounded_box([24, 18, 4], 1.5);
-        translate([4, 4, -0.1]) cube([16, 10, 4.2]);
-        translate([8, 0, 2.5]) cube([finger_gap, 18, 2]);
+module spring_clip_mount() {
+    // Actual replaceable clip geometry. The 0.8 mm finger is isolated from
+    // the carrier-facing base above the rounded root and carries the ridge.
+    root_w = finger_w + root_fillet_r;
+    finger_depth = latch_rail_depth - 0.8;
+    union() {
+        cube([2.0, latch_rail_depth, 0.8]);
+        translate([root_fillet_r, 0.4, root_fillet_r])
+            cube([finger_w, finger_depth, hook_height - root_fillet_r]);
+        translate([0, 0.4, 0])
+            cube([root_w, finger_depth, root_fillet_r]);
+        translate([root_fillet_r - ridge_reach_eff, 0.4, ridge_z0])
+            cube([ridge_reach_eff + finger_w, finger_depth, ridge_h]);
     }
-    translate([9, 12, 4]) cube([6, 7, 2]);
-    translate([9 + ridge_reach_eff, 12.4, 4 + ridge_z0 - 1])
-        cube([0.8, latch_rail_depth - 0.8, ridge_h]);
+}
+
+module spring_clip() {
+    // Standalone service-clip export uses the same geometry as carrier().
+    spring_clip_mount();
 }
 
 module coupon() {
@@ -399,9 +366,8 @@ module hook_coupon() {
     for (i = [0:2]) {
         c = 0.20 + i * 0.15;
         translate([i * 32, 0, 0]) {
-            cube([28, 20, 4]);
-            translate([4, 4, 4]) cube([20, 4, 4]);
-            translate([4, 8 + c, 4]) cube([20, 4, 4]);
+            translate([2, 2, 0]) coupon_receiver(c);
+            translate([18, 2, 0]) coupon_hook(c);
         }
     }
 }
@@ -410,10 +376,8 @@ module latch_coupon() {
     for (i = [0:2]) {
         c = 0.20 + i * 0.15;
         translate([i * 32, 0, 0]) {
-            cube([28, 20, 4]);
-            translate([4, 4, 4]) cube([20, 3, 4]);
-            translate([4, 7 + c, 4]) cube([20, 3, 4]);
-            translate([12, 10, 4]) cube([4, 4, 1]);
+            translate([2, 2, 0]) coupon_latch_receiver(c);
+            translate([18, 2, 0]) coupon_latch_clip(c);
         }
     }
 }
@@ -422,13 +386,46 @@ module registration_coupon() {
     for (i = [0:2]) {
         c = 0.20 + i * 0.15;
         translate([i * 32, 0, 0]) {
-            cube([28, 14, wall]);
-            translate([5, 4, 0])
-                cube([6 - 2 * c, 4 - 2 * c, wall]);
-            translate([17, 4, 0])
-                cube([6 + 2 * c, 4 + 2 * c, wall]);
+            translate([2, 2, 0]) cube([10, 10, wall]);
+            translate([18, 2, 0]) cube([10, 10, wall]);
+            translate([4, 5, wall]) cube([6 - 2 * c, 4 - 2 * c, 2]);
+            translate([20, 4, 0]) cube([6 + 2 * c, 4 + 2 * c, wall]);
         }
     }
+}
+
+module coupon_receiver(c) {
+    difference() {
+        cube([10, 12, 7]);
+        translate([1.5 - c, -0.1, 1.0 - c])
+            cube([7 + 2 * c, 10.1, 5.5 + 2 * c]);
+    }
+}
+
+module coupon_hook(c) {
+    hook_w = 7 - 2 * c;
+    translate([0, 1, 1]) {
+        cube([hook_w, 6, 3]);
+        translate([0, 4, 3])
+            cube([hook_w, 2, 1]);
+    }
+}
+
+module coupon_latch_receiver(c) {
+    difference() {
+        cube([10, 8, 5]);
+        translate([1 - c, 1 - c, 2])
+            cube([8 + 2 * c, 6 + 2 * c, 3.1]);
+    }
+}
+
+module coupon_latch_clip(c) {
+    translate([1, 1, 0])
+        cube([1.2, 6, 2]);
+    translate([1.2, 2, 2])
+        cube([0.8, 4, 3]);
+    translate([0.3 - c, 2, 4])
+        cube([0.9 + c, 4, 1]);
 }
 
 module panel() {
