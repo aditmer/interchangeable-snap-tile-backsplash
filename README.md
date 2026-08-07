@@ -26,6 +26,7 @@ Concept and documentation phase. No part is approved for installation near heat,
 - [System architecture](docs/system-architecture.md) — grid, tile cartridge, interfaces, and material strategy
 - [Development plan](docs/development-plan.md) — staged roadmap, tests, risks, and deliverables
 - [Prototype specification](docs/prototype-specification.md) — baseline geometry, tolerances, and print guidance
+- [MVP CAD](cad/README.md) — parameterized grid, carrier, clip, coupon, and panel exports
 - [Test plan](docs/test-plan.md) — fit, cycling, moisture, cleaning, heat, and failure tests
 - [Open questions](docs/open-questions.md) — decisions that need experiments or user research
 - [Contributing](CONTRIBUTING.md) — how to participate
