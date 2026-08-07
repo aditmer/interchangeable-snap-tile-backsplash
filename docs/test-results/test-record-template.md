@@ -5,7 +5,7 @@
 - Component revision(s):
 - Operator(s):
 - Material(s):
-- Printer, nozzle, layer height, orientation:
+- Printer, nozzle, layer height, wall count, infill, temperature, orientation:
 - Post-processing:
 - Setup and fixture:
 - Nominal dimensions:

@@ -68,53 +68,52 @@ ridge_reach_eff = ridge_reach + ridge_pt_eps / 2;
 //
 // The ridge occupies z = ridge_z0 to ridge_z0 + ridge_h, and its maximum
 // reach is used as the strain load point. The strain-governing cantilever
-// length is therefore the distance from the fixed root (z = wall) to that
-// point, eff_l = ridge_z0 + ridge_h / 2 = 3.0 + 0.5 = 3.5 mm -- not
-// hook_height (4.0 mm) as an earlier revision assumed.
+// length is therefore the distance from the fixed shoulder datum
+// (z = root_fillet_r) to that point, eff_l = 3.1 mm.
 //
 // Clearing the ridge on insertion needs a lateral displacement of
 // delta_pass = ridge_reach_eff - 2 * clearance = 0.901 - 2 * 0.35 =
-// 0.201 mm. For a cantilever of length eff_l = 3.5 mm and thickness
-// finger_w = 0.8 mm (bending direction), the nominal (unconcentrated)
+// 0.201 mm. For a cantilever of length eff_l = 3.1 mm and thickness
+// finger_w = 0.5 mm (bending direction), the nominal (unconcentrated)
 // worst-case insertion fiber strain is
 // eps_insert_nom = 3 * finger_w * delta_pass / (2 * eff_l^2)
-//                = 3 * 0.8 * 0.201 / (2 * 3.5^2) = 0.4824 / 24.5 = 0.01969,
-// i.e. ~1.97%.
+//                = 3 * 0.5 * 0.201 / (2 * 3.1^2) = 0.3015 / 19.22 = 0.01569,
+// i.e. ~1.57%.
 //
 // That nominal strain is a beam-theory average and does not by itself
 // capture the root's stress (and strain) concentration from the
-// finger_w -> finger_w + root_fillet_r shoulder fillet at z = wall. Modeling
+// finger_w -> finger_w + root_fillet_r shoulder fillet at z = root_fillet_r. Modeling
 // that root as a stepped-flat-bar shoulder fillet in bending (Peterson /
-// Pilkey polynomial fit) with D = finger_w + root_fillet_r = 1.2 mm,
-// d = finger_w = 0.8 mm, r = root_fillet_r = 0.4 mm:
+// Pilkey polynomial fit) with D = finger_w + root_fillet_r = 0.9 mm,
+// d = finger_w = 0.5 mm, r = root_fillet_r = 0.4 mm:
 //   h = (D - d) / 2 = 0.2 mm, h / r = 0.5 (in the 0.1-2.0 fit range), so
 //   C1 = 1.006 + 0.967 * sqrt(h/r) + 0.013 * (h/r)       = 1.696
 //   C2 = -0.270 - 2.372 * sqrt(h/r) + 0.708 * (h/r)      = -1.594
 //   C3 = 0.662 + 1.157 * sqrt(h/r) - 0.908 * (h/r)       = 1.026
 //   C4 = -0.405 + 0.249 * sqrt(h/r) - 0.200 * (h/r)      = -0.329
-//   x = 2h / D = 0.4 / 1.2 = 0.333
-//   Kt = C1 + C2 * x + C3 * x^2 + C4 * x^3 = 1.267
+//   x = 2h / D = 0.4 / 0.9 = 0.444
+//   Kt = C1 + C2 * x + C3 * x^2 + C4 * x^3 = 1.162
 // (Pilkey, "Peterson's Stress Concentration Factors", shoulder-fillet-in-
 // bending chart; C1..C4 depend only on h/r, which is fixed at 0.5 here
 // because D - d always equals root_fillet_r by construction, independent of
 // finger_w.)
 //
 // Peak local (root) strain = Kt * nominal strain:
-// eps_insert = Kt * eps_insert_nom = 1.267 * 0.01969 = 0.02495, i.e. ~2.49%,
+// eps_insert = Kt * eps_insert_nom = 1.162 * 0.01569 = 0.01823, i.e. ~1.82%,
 // under the 3% allowable-strain target for printed PLA/PETG flexures.
 // Removal is symmetric about the ridge's mid-height (same delta_pass, same
-// eff_l), so eps_remove = eps_insert = ~2.49%.
+// eff_l), so eps_remove = eps_insert = ~1.82%.
 //
 // In the seated position the finger is unloaded after the ridge passes the
 // rigid rail end; insertion and removal therefore govern the cycle estimate.
-finger_w = 0.8;
+finger_w = 0.5;
 // Root shoulder radius used by the clip geometry and concentration estimate.
 root_fillet_r = 0.4;
 // Bonding epsilon keeps the durable rail rooted in the grid floor rather than
 // relying on a coincident face. OpenSCAD warns that exactly-touching unions can
 // render non-manifold or as separate shells.
 // bond_eps sets how far each feature is extended into its parent solid; it
-// is well within finger_w (0.8 mm) and does not change any externally
+// is well within the structural finger/root dimensions and does not change any externally
 // visible dimension (hook_height, ridge_reach, eff_l, etc.).
 bond_eps = 0.6;
 // Upper-receiver capturing geometry: a back wall and roof beyond the hook's
@@ -154,6 +153,11 @@ module grid_section() {
                        pitch_h - 2 - registration_clearance, -0.1])
                 cube([6 + 2 * registration_clearance,
                       4 + 2 * registration_clearance, wall + 0.2]);
+            // Fastener bores must also pass through the base, not only the bosses.
+            for (x = [fastener_offset, pitch_w - fastener_offset])
+                for (y = [fastener_offset, pitch_h - fastener_offset])
+                    translate([x, y, -0.1])
+                        cylinder(r = fastener_diameter / 2, h = wall + 0.2, $fn = 32);
     }
     // Reinforced corner bosses provide supported fastener locations outside
     // the inspection opening; each hole is sized by the attachment parameter.
@@ -290,15 +294,15 @@ module carrier() {
                 }
             // Service-clip pocket. Side ledges added below retain the
             // separately printed clip without fusing it to the carrier.
-            translate([clip_mount_x0 - 0.2, clip_mount_y0 - 0.2, 1.4])
+            translate([clip_mount_x0 - 0.2, clip_mount_y0 - 0.2, 0])
                 cube([2.4, latch_rail_depth + 0.4, 1.0]);
         }
         // Each hook's own footprint remains solid and continuous with the carrier.
         upper_hook(hook_local_x_left);
         upper_hook(hook_local_x_right);
-        translate([clip_mount_x0 - 0.2, clip_mount_y0 - 0.2, 1.4])
+        translate([clip_mount_x0 - 0.2, clip_mount_y0 - 0.2, 0])
             cube([0.4, latch_rail_depth + 0.4, 0.6]);
-        translate([clip_mount_x0 + 2.1, clip_mount_y0 - 0.2, 1.4])
+        translate([clip_mount_x0 + 2.1, clip_mount_y0 - 0.2, 0])
             cube([0.4, latch_rail_depth + 0.4, 0.6]);
     }
 }
@@ -306,7 +310,7 @@ module carrier() {
 module carrier_assembly() {
     // Preview only: print carrier() and spring_clip() as separate parts.
     carrier();
-    translate([rib + clip_mount_x0, rib + clip_mount_y0, mount_z + 1.4])
+    translate([rib + clip_mount_x0, rib + clip_mount_y0, mount_z])
         spring_clip_mount();
 }
 
@@ -320,12 +324,12 @@ module flex_clip() {
 }
 
 module spring_clip_mount() {
-    // Actual replaceable clip geometry. The 0.8 mm finger is isolated from
+    // Actual replaceable clip geometry. The 0.5 mm finger is isolated from
     // the carrier-facing base above the rounded root and carries the ridge.
     root_w = finger_w + root_fillet_r;
     finger_depth = latch_rail_depth - 0.8;
     union() {
-        cube([2.0, latch_rail_depth, 0.8]);
+        cube([2.0, latch_rail_depth, root_fillet_r]);
         translate([root_fillet_r, 0.4, root_fillet_r])
             cube([finger_w, finger_depth, hook_height - root_fillet_r]);
         translate([0, 0.4, 0])
